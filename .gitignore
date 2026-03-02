@@ -5,5 +5,5 @@ result-*
 # Ignore automatically generated direnv output
 .direnv
 *.iso
-aetherctl
-aetherd
+sigilctl
+sigild
