@@ -126,7 +126,6 @@ func run(cfg config, log *slog.Logger) error {
 	col.Add(&sources.FileSource{Paths: cfg.watchPaths})
 	col.Add(&sources.ProcessSource{})
 	col.Add(&sources.GitSource{RepoPaths: cfg.repoPaths})
-	col.Add(&sources.HyprlandSource{})
 	col.Add(terminalSrc)
 
 	if err := col.Start(ctx); err != nil {
