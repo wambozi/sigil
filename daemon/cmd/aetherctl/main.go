@@ -1,12 +1,12 @@
-// Command sigilctl is the command-line interface for interacting with a
-// running sigild daemon.  It communicates over the Unix domain socket and
+// Command aetherctl is the command-line interface for interacting with a
+// running aetherd daemon.  It communicates over the Unix domain socket and
 // also supports direct SQLite queries when the daemon is not running.
 //
 // Usage:
 //
-//	sigilctl status          — daemon health check
-//	sigilctl events [-n N]   — list recent events
-//	sigilctl tail            — poll and print events continuously
+//	aetherctl status          — daemon health check
+//	aetherctl events [-n N]   — list recent events
+//	aetherctl tail            — poll and print events continuously
 package main
 
 import (
@@ -21,20 +21,20 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/wambozi/sigil/internal/event"
-	"github.com/wambozi/sigil/internal/socket"
-	"github.com/wambozi/sigil/internal/store"
+	"github.com/wambozi/aether/internal/event"
+	"github.com/wambozi/aether/internal/socket"
+	"github.com/wambozi/aether/internal/store"
 )
 
 func main() {
 	if err := run(); err != nil {
-		fmt.Fprintln(os.Stderr, "sigilctl:", err)
+		fmt.Fprintln(os.Stderr, "aetherctl:", err)
 		os.Exit(1)
 	}
 }
 
 func run() error {
-	socketPath := flag.String("socket", defaultSocketPath(), "sigild Unix socket path")
+	socketPath := flag.String("socket", defaultSocketPath(), "aetherd Unix socket path")
 	dbPath := flag.String("db", defaultDBPath(), "SQLite database path (used when daemon is offline)")
 	flag.Parse()
 
@@ -53,7 +53,7 @@ func run() error {
 	case "tail":
 		return cmdTail(*socketPath, *dbPath)
 	default:
-		return fmt.Errorf("unknown command %q — run sigilctl -help", cmd)
+		return fmt.Errorf("unknown command %q — run aetherctl -help", cmd)
 	}
 }
 
@@ -71,7 +71,7 @@ func cmdStatus(socketPath string) error {
 	var payload map[string]any
 	_ = json.Unmarshal(resp.Payload, &payload)
 
-	fmt.Printf("sigild  status=%v  version=%v\n",
+	fmt.Printf("aetherd  status=%v  version=%v\n",
 		payload["status"], payload["version"])
 	return nil
 }
@@ -103,7 +103,7 @@ func cmdEvents(socketPath, dbPath string, args []string) error {
 // cmdTail polls the events endpoint every two seconds and prints new entries.
 // Phase 2 will replace this with a proper push subscription over the socket.
 func cmdTail(socketPath, dbPath string) error {
-	fmt.Fprintln(os.Stderr, "sigilctl tail: polling every 2s (Ctrl-C to stop)…")
+	fmt.Fprintln(os.Stderr, "aetherctl tail: polling every 2s (Ctrl-C to stop)…")
 	for {
 		_ = cmdEvents(socketPath, dbPath, nil)
 		time.Sleep(2 * time.Second)
@@ -187,7 +187,7 @@ func defaultSocketPath() string {
 	if runtime == "" {
 		runtime = fmt.Sprintf("/run/user/%d", os.Getuid())
 	}
-	return filepath.Join(runtime, "sigild.sock")
+	return filepath.Join(runtime, "aetherd.sock")
 }
 
 func defaultDBPath() string {
@@ -196,11 +196,11 @@ func defaultDBPath() string {
 		h, _ := os.UserHomeDir()
 		base = filepath.Join(h, ".local", "share")
 	}
-	return filepath.Join(base, "sigild", "data.db")
+	return filepath.Join(base, "aetherd", "data.db")
 }
 
 func printUsage() {
-	fmt.Print(`sigilctl — Sigil OS daemon CLI
+	fmt.Print(`aetherctl — Aether OS daemon CLI
 
 Commands:
   status              Show daemon health and version
@@ -208,7 +208,7 @@ Commands:
   tail                Poll and stream live events every 2s
 
 Flags:
-  -socket PATH        Unix socket path (default: $XDG_RUNTIME_DIR/sigild.sock)
+  -socket PATH        Unix socket path (default: $XDG_RUNTIME_DIR/aetherd.sock)
   -db PATH            SQLite path for offline reads
 `)
 }

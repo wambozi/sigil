@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
-	"github.com/wambozi/sigil/internal/event"
+	"github.com/wambozi/aether/internal/event"
 )
 
 // GitSource watches one or more git repositories for activity by monitoring

@@ -15,7 +15,7 @@ v2.0 — Unified Shell UI direction integrated; architecture, phases, and stack 
 
 ## 1. Executive Summary
 
-Sigil OS is a purpose-built, AI-native Linux operating system designed exclusively for professional software engineers and the engineering organizations they work within. Unlike consumer AI-OS attempts (Humane's Cosmos, Rabbit OS) that tried to abstract away complexity, Aether leans into it — delivering a unified single-pane shell where every developer tool lives inside one application frame, governed by a self-tuning AI daemon that adapts the entire environment to each developer's unique workflow patterns.
+Aether OS is a purpose-built, AI-native Linux operating system designed exclusively for professional software engineers and the engineering organizations they work within. Unlike consumer AI-OS attempts (Humane's Cosmos, Rabbit OS) that tried to abstract away complexity, Aether leans into it — delivering a unified single-pane shell where every developer tool lives inside one application frame, governed by a self-tuning AI daemon that adapts the entire environment to each developer's unique workflow patterns.
 
 The user interface is the product's most distinctive design decision: **Aether presents the entire OS as a single full-screen shell** — a left-hand navigation rail for switching between embedded tools (editor, terminal, browser, git, containers, daemon insights), a main content pane, and a persistent unified input line at the bottom that seamlessly toggles between terminal commands and natural language AI prompts.
 
@@ -133,7 +133,7 @@ If Aether runs well on a 2017 MacBook Pro with Cactus routing 80% of inference o
 
 ### 5.1 Design Philosophy
 
-The Sigil Shell is a single full-screen application that *is* the user's entire desktop. It runs as a Wayland client on Hyprland, occupying the full screen. Hyprland manages the low-level compositor responsibilities (GPU rendering, input handling, display management), while the Sigil Shell manages everything the user sees and interacts with.
+The Aether Shell is a single full-screen application that *is* the user's entire desktop. It runs as a Wayland client on Hyprland, occupying the full screen. Hyprland manages the low-level compositor responsibilities (GPU rendering, input handling, display management), while the Aether Shell manages everything the user sees and interacts with.
 
 The design philosophy is: **a terminal that learned to be a GUI.** The entire interface should feel like a high-end terminal application — keyboard-first, dark, monospace typography, minimal chrome — but with the spatial affordances of a GUI: a navigation rail, tabbed content areas, inline rendering of rich content, and mouse interactivity when wanted.
 
@@ -161,11 +161,11 @@ The shell is built with Tauri (Rust backend + WebKitGTK WebView + TypeScript/Pre
 
 **Layer 2: Compositor (Hyprland on Wayland).** GPU rendering substrate, multi-monitor support, fallback window management.
 
-**Layer 3: The Sigil Shell (Tauri).** The unified single-pane application — the user's entire desktop experience.
+**Layer 3: The Aether Shell (Tauri).** The unified single-pane application — the user's entire desktop experience.
 
 **Layer 4: Hybrid Inference Engine (Cactus Compute).** Runs as a local service, routes AI queries between on-device models and cloud APIs based on complexity, device capability, and user-configured privacy policy. Replaces the previous LiteLLM + Ollama stack with a single unified runtime.
 
-**Layer 5: The Daemon (sigild).** Go binary as a systemd service with three subsystems — Collector, Analyzer, Actuator — plus the enterprise Fleet Reporter. Communicates with the shell over a Unix socket and with Cactus via its local HTTP API.
+**Layer 5: The Daemon (aetherd).** Go binary as a systemd service with three subsystems — Collector, Analyzer, Actuator — plus the enterprise Fleet Reporter. Communicates with the shell over a Unix socket and with Cactus via its local HTTP API.
 
 **Layer 6: Fleet Aggregation Layer (enterprise only).** Receives anonymized, aggregated metrics from opted-in daemons across an engineering organization. Provides the leadership dashboard, compliance reporting, and cost analytics.
 
@@ -263,13 +263,13 @@ The initial target vertical is **fintech** — our engineer's home territory, wh
 
 **Goal:** A running Go daemon that observes, reports, and talks to Cactus.
 
-**Deliverables:** `sigild` as a systemd service. Collector watches file events, /proc, and Hyprland IPC. Events stored in SQLite. Hourly summary sent to Cactus's local API endpoint (which routes to local model or cloud based on complexity). Responses displayed as D-Bus notifications. `sigilctl` CLI for querying the local database. Unix socket server for future shell communication. AI interaction metrics tracked from the start (even though the shell doesn't exist yet, the daemon logs its own AI queries and Cactus routing decisions). Background retention job that prunes raw events older than 90 days while preserving derived patterns indefinitely.
+**Deliverables:** `aetherd` as a systemd service. Collector watches file events, /proc, and Hyprland IPC. Events stored in SQLite. Hourly summary sent to Cactus's local API endpoint (which routes to local model or cloud based on complexity). Responses displayed as D-Bus notifications. `aetherctl` CLI for querying the local database. Unix socket server for future shell communication. AI interaction metrics tracked from the start (even though the shell doesn't exist yet, the daemon logs its own AI queries and Cactus routing decisions). Background retention job that prunes raw events older than 90 days while preserving derived patterns indefinitely.
 
 **Engineer focus:** Go daemon architecture, Cactus API integration (OpenAI-compatible HTTP), SQLite schema with AI interaction metrics.
 
 **Exit criteria:** Daemon runs 48+ hours stable, under 50MB RAM. Cactus routing works — simple queries go local, complex queries go cloud. Socket API is stable.
 
-### Phase 2: The Sigil Shell v0 (Weeks 7–14)
+### Phase 2: The Aether Shell v0 (Weeks 7–14)
 
 **Goal:** The unified single-pane shell replaces the tiling WM as the primary interface.
 
@@ -299,7 +299,7 @@ The initial target vertical is **fintech** — our engineer's home territory, wh
 
 **Goal:** The fleet aggregation layer and leadership dashboard.
 
-**Deliverables — Fleet Reporter.** A new subsystem in `sigild` that computes anonymous aggregate metrics and sends them to a central endpoint. Metrics include: AI query counts by category, suggestion acceptance rates, adoption tier classification, Cactus local-vs-cloud routing ratio, build velocity indicators, and cost-per-query data from Cactus. The Fleet Reporter is disabled by default and requires explicit opt-in. When enabled, the Insights view shows a "Fleet Reporting" tab with a live preview of exactly what is being sent.
+**Deliverables — Fleet Reporter.** A new subsystem in `aetherd` that computes anonymous aggregate metrics and sends them to a central endpoint. Metrics include: AI query counts by category, suggestion acceptance rates, adoption tier classification, Cactus local-vs-cloud routing ratio, build velocity indicators, and cost-per-query data from Cactus. The Fleet Reporter is disabled by default and requires explicit opt-in. When enabled, the Insights view shows a "Fleet Reporting" tab with a live preview of exactly what is being sent.
 
 **Deliverables — Fleet Aggregation Layer.** A small Go service (or a set of cloud functions) that receives Fleet Reporter data, aggregates across the org, and serves the leadership dashboard. Deployable on the org's infrastructure via a Helm chart or NixOS module. Stores aggregated data in PostgreSQL.
 
@@ -342,8 +342,8 @@ The initial target vertical is **fintech** — our engineer's home territory, wh
 | Inference Engine | Cactus Compute (C/C++ runtime) | Hybrid on-device/cloud routing, zero-copy memory, quantized models |
 | On-Device Model | LFM2-2.6B (INT4) or similar | Small, fast, handles 80% of queries |
 | Cloud Models | Claude, GPT-4, etc. (via Cactus cloud fallback) | Complex reasoning, 20% of queries |
-| Daemon | Go — `sigild` | Low memory, fast startup |
-| Daemon CLI | Go — `sigilctl` | Query local store, manage config |
+| Daemon | Go — `aetherd` | Low memory, fast startup |
+| Daemon CLI | Go — `aetherctl` | Query local store, manage config |
 | Shell ↔ Daemon IPC | Unix domain socket + JSON | Fast, standard |
 | Daemon ↔ Cactus | OpenAI-compatible HTTP (localhost) | Standard API, drop-in replaceable |
 | Local Store | SQLite (WAL mode) | Zero-config, concurrent reads |

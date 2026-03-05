@@ -1,4 +1,4 @@
-// Command sigild is the Sigil OS daemon — a self-tuning intelligence layer
+// Command aetherd is the Aether OS daemon — a self-tuning intelligence layer
 // that observes workflow patterns, builds a local user model, and reshapes
 // the developer environment.
 //
@@ -7,7 +7,7 @@
 //   - Store: SQLite (WAL mode) — all data stays local
 //   - Analyzer: hourly heuristic pass + Cactus LLM summary
 //   - Actuator: desktop notifications via notify-send
-//   - Socket: Unix domain socket for sigilctl and the future shell
+//   - Socket: Unix domain socket for aetherctl and the future shell
 package main
 
 import (
@@ -22,20 +22,20 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/wambozi/sigil/internal/actuator"
-	"github.com/wambozi/sigil/internal/analyzer"
-	"github.com/wambozi/sigil/internal/cactus"
-	"github.com/wambozi/sigil/internal/collector"
-	"github.com/wambozi/sigil/internal/collector/sources"
-	"github.com/wambozi/sigil/internal/socket"
-	"github.com/wambozi/sigil/internal/store"
+	"github.com/wambozi/aether/internal/actuator"
+	"github.com/wambozi/aether/internal/analyzer"
+	"github.com/wambozi/aether/internal/cactus"
+	"github.com/wambozi/aether/internal/collector"
+	"github.com/wambozi/aether/internal/collector/sources"
+	"github.com/wambozi/aether/internal/socket"
+	"github.com/wambozi/aether/internal/store"
 )
 
 func main() {
 	cfg := parseFlags()
 
 	log := newLogger(cfg.logLevel)
-	log.Info("sigild starting", "version", "0.1.0-dev")
+	log.Info("aetherd starting", "version", "0.1.0-dev")
 
 	if err := run(cfg, log); err != nil {
 		log.Error("fatal", "err", err)
@@ -155,14 +155,14 @@ func run(cfg config, log *slog.Logger) error {
 	srv.Stop()
 	col.Stop()
 
-	log.Info("sigild stopped cleanly")
+	log.Info("aetherd stopped cleanly")
 	return nil
 }
 
 // --- Socket handlers --------------------------------------------------------
 
 func registerHandlers(srv *socket.Server, db *store.Store, log *slog.Logger) {
-	// status — quick health check for sigilctl and the shell.
+	// status — quick health check for aetherctl and the shell.
 	srv.Handle("status", func(ctx context.Context, _ socket.Request) socket.Response {
 		return socket.Response{
 			OK:      true,
@@ -202,7 +202,7 @@ func defaultDBPath() string {
 	if base == "" {
 		base = filepath.Join(homeDir(), ".local", "share")
 	}
-	return filepath.Join(base, "sigild", "data.db")
+	return filepath.Join(base, "aetherd", "data.db")
 }
 
 func defaultSocketPath() string {
@@ -210,7 +210,7 @@ func defaultSocketPath() string {
 	if runtime == "" {
 		runtime = fmt.Sprintf("/run/user/%d", os.Getuid())
 	}
-	return filepath.Join(runtime, "sigild.sock")
+	return filepath.Join(runtime, "aetherd.sock")
 }
 
 func homeDir() string {

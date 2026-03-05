@@ -8,8 +8,8 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/wambozi/sigil/internal/event"
-	"github.com/wambozi/sigil/internal/store"
+	"github.com/wambozi/aether/internal/event"
+	"github.com/wambozi/aether/internal/store"
 )
 
 // Source is implemented by every event-producing subsystem.

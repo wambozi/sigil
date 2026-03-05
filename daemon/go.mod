@@ -1,4 +1,4 @@
-module github.com/wambozi/sigil
+module github.com/wambozi/aether
 
 go 1.26
 

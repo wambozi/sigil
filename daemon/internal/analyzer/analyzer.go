@@ -14,9 +14,9 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/wambozi/sigil/internal/cactus"
-	"github.com/wambozi/sigil/internal/event"
-	"github.com/wambozi/sigil/internal/store"
+	"github.com/wambozi/aether/internal/cactus"
+	"github.com/wambozi/aether/internal/event"
+	"github.com/wambozi/aether/internal/store"
 )
 
 // Summary is a structured digest produced by the local heuristic tier and
@@ -150,7 +150,7 @@ func (a *Analyzer) cloudPass(ctx context.Context, s *Summary) error {
 	return nil
 }
 
-const systemPrompt = `You are the intelligence layer of Sigil OS — a self-tuning
+const systemPrompt = `You are the intelligence layer of Aether OS — a self-tuning
 operating system for professional software engineers. You receive a summary of
 recent workflow activity collected on the engineer's machine.
 
