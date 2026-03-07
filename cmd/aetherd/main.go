@@ -215,9 +215,12 @@ func run(cfg daemonConfig, log *slog.Logger) error {
 	var currentRSSMB atomic.Int64
 	go runRSSMonitor(ctx, log, &currentRSSMB)
 
+	// --- Daily digest scheduler ---------------------------------------------
+	nextDigest := scheduleDigest(ctx, cfg.digestTime, ntf, log)
+
 	// --- Socket server ------------------------------------------------------
 	srv := socket.New(cfg.socketPath, log)
-	registerHandlers(srv, db, ntf, anlz, terminalSrc, log, &currentRSSMB)
+	registerHandlers(srv, db, ntf, anlz, terminalSrc, log, &currentRSSMB, nextDigest)
 
 	if err := srv.Start(ctx); err != nil {
 		return fmt.Errorf("start socket: %w", err)
@@ -276,17 +279,24 @@ func registerHandlers(
 	terminalSrc *sources.TerminalSource,
 	log *slog.Logger,
 	rssMB *atomic.Int64,
+	nextDigest *atomic.Int64,
 ) {
 	// status — quick health check for aetherctl and the shell.
 	srv.Handle("status", func(ctx context.Context, _ socket.Request) socket.Response {
+		payload := map[string]any{
+			"status":         "ok",
+			"version":        "0.1.0-dev",
+			"notifier_level": int(ntf.Level()),
+			"rss_mb":         rssMB.Load(),
+		}
+		if ntf.Level() == notifier.LevelDigest {
+			if ns := nextDigest.Load(); ns > 0 {
+				payload["next_digest_at"] = time.Unix(ns, 0).UTC().Format(time.RFC3339)
+			}
+		}
 		return socket.Response{
-			OK: true,
-			Payload: socket.MarshalPayload(map[string]any{
-				"status":         "ok",
-				"version":        "0.1.0-dev",
-				"notifier_level": int(ntf.Level()),
-				"rss_mb":         rssMB.Load(),
-			}),
+			OK:      true,
+			Payload: socket.MarshalPayload(payload),
 		}
 	})
 
@@ -566,6 +576,52 @@ func readRSSMB() (int64, error) {
 		return 0, fmt.Errorf("scan /proc/self/status: %w", err)
 	}
 	return 0, fmt.Errorf("VmRSS not found in /proc/self/status")
+}
+
+// --- Daily digest scheduler -------------------------------------------------
+
+// scheduleDigest starts a background goroutine that calls ntf.FlushDigest()
+// at the configured local time each day.  It returns an atomic int64 holding
+// the Unix timestamp of the next flush (for the status endpoint).
+func scheduleDigest(ctx context.Context, digestTime string, ntf *notifier.Notifier, log *slog.Logger) *atomic.Int64 {
+	var next atomic.Int64
+
+	go func() {
+		for {
+			t := nextDigestTime(digestTime)
+			next.Store(t.Unix())
+
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(time.Until(t)):
+				ntf.FlushDigest()
+				log.Info("digest flushed", "digest_time", digestTime)
+			}
+		}
+	}()
+
+	return &next
+}
+
+// nextDigestTime returns the next wall-clock time when the digest should fire,
+// based on the HH:MM string.  If the time has already passed today, it returns
+// tomorrow's occurrence.
+func nextDigestTime(hhmm string) time.Time {
+	now := time.Now()
+	hour, minute := 9, 0 // safe defaults
+	if len(hhmm) == 5 && hhmm[2] == ':' {
+		h, herr := strconv.Atoi(hhmm[:2])
+		m, merr := strconv.Atoi(hhmm[3:])
+		if herr == nil && merr == nil && h >= 0 && h < 24 && m >= 0 && m < 60 {
+			hour, minute = h, m
+		}
+	}
+	t := time.Date(now.Year(), now.Month(), now.Day(), hour, minute, 0, 0, now.Location())
+	if !t.After(now) {
+		t = t.Add(24 * time.Hour)
+	}
+	return t
 }
 
 // --- Init subcommand --------------------------------------------------------
