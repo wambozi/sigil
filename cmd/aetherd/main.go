@@ -222,11 +222,39 @@ func run(cfg daemonConfig, log *slog.Logger) error {
 	<-ctx.Done()
 	log.Info("shutdown signal received")
 
-	srv.Stop()
-	col.Stop()
+	drainWithTimeout(log, 10*time.Second, func() {
+		srv.Stop()
+		col.Stop()
+	})
 
 	log.Info("aetherd stopped cleanly")
 	return nil
+}
+
+// drainWithTimeout runs drainFn in a goroutine and waits up to timeout for it
+// to complete.  If it exceeds the deadline it logs an error and calls
+// os.Exit(1) so systemd will restart the daemon.
+func drainWithTimeout(log *slog.Logger, timeout time.Duration, drainFn func()) {
+	drainWithTimeoutAndExit(log, timeout, drainFn, func(code int) { os.Exit(code) })
+}
+
+// drainWithTimeoutAndExit is the testable core of drainWithTimeout.
+// exitFn replaces os.Exit so tests can observe the timeout without forking.
+func drainWithTimeoutAndExit(log *slog.Logger, timeout time.Duration, drainFn func(), exitFn func(int)) {
+	done := make(chan struct{})
+	go func() {
+		drainFn()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Clean shutdown.
+	case <-time.After(timeout):
+		log.Error("shutdown drain timed out — forcing exit",
+			"timeout", timeout)
+		exitFn(1)
+	}
 }
 
 // --- Socket handlers --------------------------------------------------------
