@@ -34,6 +34,7 @@ import (
 	"github.com/wambozi/aether/internal/collector/sources"
 	"github.com/wambozi/aether/internal/config"
 	"github.com/wambozi/aether/internal/event"
+	"github.com/wambozi/aether/internal/fleet"
 	"github.com/wambozi/aether/internal/notifier"
 	"github.com/wambozi/aether/internal/socket"
 	"github.com/wambozi/aether/internal/store"
@@ -269,6 +270,15 @@ func run(cfg daemonConfig, log *slog.Logger) error {
 	})
 
 	log.Info("actuator registry started")
+
+	// --- Fleet Reporter -----------------------------------------------------
+	var fleetReporter *fleet.Reporter
+	if cfg.fileCfg.Fleet.Enabled {
+		fleetReporter = fleet.New(db, cfg.fileCfg.Fleet, log)
+		go fleetReporter.Run(ctx)
+		log.Info("fleet reporter started", "endpoint", cfg.fileCfg.Fleet.Endpoint)
+	}
+	registerFleetHandlers(srv, fleetReporter)
 
 	if err := srv.Start(ctx); err != nil {
 		return fmt.Errorf("start socket: %w", err)
@@ -849,4 +859,27 @@ func splitPaths(s string) []string {
 		}
 	}
 	return out
+}
+
+// --- Fleet socket handlers --------------------------------------------------
+
+func registerFleetHandlers(srv *socket.Server, reporter *fleet.Reporter) {
+	srv.Handle("fleet-preview", func(ctx context.Context, _ socket.Request) socket.Response {
+		if reporter == nil {
+			return socket.Response{Error: "fleet reporting is not enabled"}
+		}
+		report, err := reporter.Preview(ctx)
+		if err != nil {
+			return socket.Response{Error: fmt.Sprintf("fleet preview: %s", err)}
+		}
+		return socket.Response{OK: true, Payload: socket.MarshalPayload(report)}
+	})
+
+	srv.Handle("fleet-opt-out", func(ctx context.Context, _ socket.Request) socket.Response {
+		if reporter == nil {
+			return socket.Response{Error: "fleet reporting is not enabled"}
+		}
+		reporter.OptOut()
+		return socket.Response{OK: true, Payload: socket.MarshalPayload(map[string]any{"ok": true})}
+	})
 }

@@ -16,10 +16,11 @@ import (
 // Zero values mean "use the built-in default" so callers can detect which
 // fields were actually set by the file.
 type Config struct {
-	Daemon   DaemonConfig   `toml:"daemon"`
-	Notifier NotifierConfig `toml:"notifier"`
-	Cactus   CactusConfig   `toml:"cactus"`
+	Daemon    DaemonConfig    `toml:"daemon"`
+	Notifier  NotifierConfig  `toml:"notifier"`
+	Cactus    CactusConfig    `toml:"cactus"`
 	Retention RetentionConfig `toml:"retention"`
+	Fleet     FleetConfig     `toml:"fleet"`
 }
 
 // DaemonConfig covers process-level settings.
@@ -56,6 +57,14 @@ type CactusConfig struct {
 // RetentionConfig controls how long raw data is kept.
 type RetentionConfig struct {
 	RawEventDays int `toml:"raw_event_days"`
+}
+
+// FleetConfig controls the Fleet Reporter subsystem.
+type FleetConfig struct {
+	Enabled  bool   `toml:"enabled"`
+	Endpoint string `toml:"endpoint"`
+	Interval string `toml:"interval"` // duration string, default "1h"
+	NodeID   string `toml:"node_id"`  // auto-generated if empty
 }
 
 // Defaults returns a Config populated with sensible built-in values.
@@ -164,6 +173,19 @@ func merge(dst, src *Config) {
 
 	if src.Retention.RawEventDays != 0 {
 		dst.Retention.RawEventDays = src.Retention.RawEventDays
+	}
+
+	if src.Fleet.Enabled {
+		dst.Fleet.Enabled = true
+	}
+	if src.Fleet.Endpoint != "" {
+		dst.Fleet.Endpoint = src.Fleet.Endpoint
+	}
+	if src.Fleet.Interval != "" {
+		dst.Fleet.Interval = src.Fleet.Interval
+	}
+	if src.Fleet.NodeID != "" {
+		dst.Fleet.NodeID = src.Fleet.NodeID
 	}
 }
 
