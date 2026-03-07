@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wambozi/aether/internal/event"
 	"github.com/wambozi/aether/internal/notifier"
 	"github.com/wambozi/aether/internal/store"
 )
@@ -61,6 +62,7 @@ func (d *Detector) Detect(ctx context.Context, window time.Duration) ([]notifier
 		{"session_length", d.checkSessionLength},
 		{"ai_query_category_trends", d.checkAIQueryCategoryTrends},
 		{"suggestion_acceptance_trend", d.checkSuggestionAcceptanceTrend},
+		{"progressive_disclosure", d.checkProgressiveDisclosure},
 	}
 
 	var out []notifier.Suggestion
@@ -553,6 +555,186 @@ func (d *Detector) checkSuggestionAcceptanceTrend(ctx context.Context, since tim
 	}
 
 	return nil, nil
+}
+
+// --- Progressive AI disclosure ---------------------------------------------
+
+// AITier classifies the engineer's AI adoption level.
+type AITier int
+
+const (
+	TierObserver   AITier = 0 // no AI queries
+	TierExplorer   AITier = 1 // < 5 queries in last 7 days
+	TierIntegrator AITier = 2 // 5–20 queries in last 7 days
+	TierNative     AITier = 3 // 20+ queries in last 7 days
+)
+
+// detectAITier returns the tier based on the number of AI interactions.
+func detectAITier(interactions []event.AIInteraction) AITier {
+	n := len(interactions)
+	switch {
+	case n == 0:
+		return TierObserver
+	case n < 5:
+		return TierExplorer
+	case n <= 20:
+		return TierIntegrator
+	default:
+		return TierNative
+	}
+}
+
+// checkProgressiveDisclosure computes the user's AI tier and emits contextual
+// suggestions that nudge users toward deeper AI adoption. The current tier is
+// persisted in the patterns table so it survives restarts.
+func (d *Detector) checkProgressiveDisclosure(ctx context.Context, since time.Time) ([]notifier.Suggestion, error) {
+	// Use a 7-day window for tier detection regardless of the detector window.
+	tierSince := time.Now().Add(-7 * 24 * time.Hour)
+	interactions, err := d.store.QueryAIInteractions(ctx, tierSince)
+	if err != nil {
+		return nil, fmt.Errorf("patterns: progressive_disclosure: query interactions: %w", err)
+	}
+
+	tier := detectAITier(interactions)
+
+	// Persist the tier.
+	_ = d.store.InsertPattern(ctx, "ai_tier", map[string]any{"tier": int(tier)})
+
+	switch tier {
+	case TierObserver:
+		// Tier 0→1: nudge if build failures detected.
+		return d.progressiveTier0(ctx, since)
+	case TierExplorer:
+		// Tier 1→2: nudge if edit-then-test ratio is high.
+		return d.progressiveTier1(ctx, since)
+	case TierIntegrator:
+		// Tier 2→3: codebase-aware prompts.
+		return d.progressiveTier2(ctx, since)
+	default:
+		// TierNative: no disclosure needed.
+		return nil, nil
+	}
+}
+
+// progressiveTier0 nudges observers toward their first AI query when build failures are detected.
+func (d *Detector) progressiveTier0(ctx context.Context, since time.Time) ([]notifier.Suggestion, error) {
+	termEvents, err := d.store.QueryTerminalEvents(ctx, since)
+	if err != nil {
+		return nil, err
+	}
+	failures := 0
+	for _, te := range termEvents {
+		if isTestOrBuildCmd(cmdFromPayload(te.Payload)) && exitCodeFromPayload(te.Payload) != 0 {
+			failures++
+		}
+	}
+	if failures < buildFailStreakMin {
+		return nil, nil
+	}
+	return []notifier.Suggestion{{
+		Category:   "ai_discovery",
+		Confidence: notifier.ConfidenceModerate,
+		Title:      "Try the AI assistant",
+		Body:       "Stuck on build failures? Try Alt+Tab and ask: 'why is my build failing?'",
+	}}, nil
+}
+
+// progressiveTier1 nudges explorers toward deeper integration when edit-then-test patterns are strong.
+func (d *Detector) progressiveTier1(ctx context.Context, since time.Time) ([]notifier.Suggestion, error) {
+	fileEvents, err := d.store.QueryRecentFileEvents(ctx, since)
+	if err != nil {
+		return nil, err
+	}
+	termEvents, err := d.store.QueryTerminalEvents(ctx, since)
+	if err != nil {
+		return nil, err
+	}
+	if len(fileEvents) == 0 || len(termEvents) == 0 {
+		return nil, nil
+	}
+
+	// Find the directory with the highest edit-then-test ratio.
+	editCount := make(map[string]int)
+	followedCount := make(map[string]int)
+	for _, fe := range fileEvents {
+		dir := dirFromPayload(fe.Payload)
+		if dir == "" {
+			continue
+		}
+		editCount[dir]++
+		deadline := fe.Timestamp.Add(editTestWindow)
+		for _, te := range termEvents {
+			if te.Timestamp.Before(fe.Timestamp) {
+				continue
+			}
+			if te.Timestamp.After(deadline) {
+				break
+			}
+			if isTestOrBuildCmd(cmdFromPayload(te.Payload)) {
+				followedCount[dir]++
+				break
+			}
+		}
+	}
+
+	bestDir := ""
+	bestRatio := 0.0
+	for dir, total := range editCount {
+		if total == 0 {
+			continue
+		}
+		ratio := float64(followedCount[dir]) / float64(total)
+		if ratio > bestRatio {
+			bestRatio = ratio
+			bestDir = dir
+		}
+	}
+
+	if bestRatio < editTestThreshold {
+		return nil, nil
+	}
+	return []notifier.Suggestion{{
+		Category:   "ai_discovery",
+		Confidence: notifier.ConfidenceModerate,
+		Title:      "Automate your test workflow",
+		Body: fmt.Sprintf(
+			"You always run tests after edits in %s. Alt+Tab and ask: 'set up a file-watch test runner for this project.'",
+			bestDir,
+		),
+	}}, nil
+}
+
+// progressiveTier2 nudges integrators toward native usage with codebase-aware prompts.
+func (d *Detector) progressiveTier2(ctx context.Context, since time.Time) ([]notifier.Suggestion, error) {
+	fileEvents, err := d.store.QueryRecentFileEvents(ctx, since)
+	if err != nil {
+		return nil, err
+	}
+	if len(fileEvents) == 0 {
+		return nil, nil
+	}
+
+	counts := make(map[string]int64)
+	for _, e := range fileEvents {
+		path, _ := e.Payload["path"].(string)
+		if path != "" {
+			counts[path]++
+		}
+	}
+	top := topN(counts, 1)
+	if len(top) == 0 {
+		return nil, nil
+	}
+
+	return []notifier.Suggestion{{
+		Category:   "ai_discovery",
+		Confidence: notifier.ConfidenceStrong,
+		Title:      "Deep-dive with AI",
+		Body: fmt.Sprintf(
+			"You're spending time in %s. Alt+Tab and ask: 'summarize this module and suggest improvements.'",
+			filepath.Base(top[0].Path),
+		),
+	}}, nil
 }
 
 // --- Payload helpers -------------------------------------------------------

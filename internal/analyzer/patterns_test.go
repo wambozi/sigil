@@ -500,6 +500,99 @@ func TestDetector_SuggestionAcceptanceTrend_lowRate_suggestionReturned(t *testin
 	}
 }
 
+// --- ProgressiveDisclosure ---------------------------------------------------
+
+func TestDetectAITier(t *testing.T) {
+	tests := []struct {
+		name  string
+		count int
+		want  AITier
+	}{
+		{"zero", 0, TierObserver},
+		{"few", 3, TierExplorer},
+		{"moderate", 10, TierIntegrator},
+		{"many", 25, TierNative},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			interactions := make([]event.AIInteraction, tt.count)
+			got := detectAITier(interactions)
+			if got != tt.want {
+				t.Errorf("detectAITier(%d interactions) = %d, want %d", tt.count, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDetector_ProgressiveDisclosure_tier0_buildFailures(t *testing.T) {
+	db := openMemoryStore(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	// No AI interactions (tier 0) + 3 build failures → should suggest trying AI.
+	for i := range 3 {
+		insertTerminal(t, ctx, db, "go test ./...", 1, "/proj",
+			now.Add(-time.Duration(3-i)*5*time.Minute))
+	}
+
+	det := NewDetector(db, newTestLogger())
+	suggestions, err := det.checkProgressiveDisclosure(ctx, now.Add(-time.Hour))
+	if err != nil {
+		t.Fatalf("checkProgressiveDisclosure: %v", err)
+	}
+
+	if !hasSuggestionWithTitle(t, suggestions, "Try the AI assistant") {
+		t.Errorf("expected tier 0 AI discovery suggestion; got %+v", suggestions)
+	}
+}
+
+func TestDetector_ProgressiveDisclosure_tier3_noSuggestion(t *testing.T) {
+	db := openMemoryStore(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	// 25 AI interactions (tier 3) → no disclosure suggestion.
+	for i := range 25 {
+		insertAIInteraction(t, ctx, db, "debug", now.Add(-time.Duration(i+1)*time.Minute))
+	}
+
+	det := NewDetector(db, newTestLogger())
+	suggestions, err := det.checkProgressiveDisclosure(ctx, now.Add(-time.Hour))
+	if err != nil {
+		t.Fatalf("checkProgressiveDisclosure: %v", err)
+	}
+
+	if hasSuggestionWithTitle(t, suggestions, "Try the AI assistant") ||
+		hasSuggestionWithTitle(t, suggestions, "Automate your test workflow") ||
+		hasSuggestionWithTitle(t, suggestions, "Deep-dive with AI") {
+		t.Errorf("expected no disclosure suggestion for tier 3; got %+v", suggestions)
+	}
+}
+
+func TestDetector_ProgressiveDisclosure_tier2_fileAware(t *testing.T) {
+	db := openMemoryStore(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	// 10 AI interactions (tier 2) + file edits → codebase-aware suggestion.
+	for i := range 10 {
+		insertAIInteraction(t, ctx, db, "debug", now.Add(-time.Duration(i+1)*time.Minute))
+	}
+	for i := range 5 {
+		insertFile(t, ctx, db, "/proj/handler.go", now.Add(-time.Duration(i+1)*time.Minute))
+	}
+
+	det := NewDetector(db, newTestLogger())
+	suggestions, err := det.checkProgressiveDisclosure(ctx, now.Add(-time.Hour))
+	if err != nil {
+		t.Fatalf("checkProgressiveDisclosure: %v", err)
+	}
+
+	if !hasSuggestionWithTitle(t, suggestions, "Deep-dive with AI") {
+		t.Errorf("expected tier 2 codebase-aware suggestion; got %+v", suggestions)
+	}
+}
+
 // --- isTestOrBuildCmd -------------------------------------------------------
 
 func TestIsTestOrBuildCmd(t *testing.T) {

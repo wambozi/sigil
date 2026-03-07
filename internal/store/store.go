@@ -152,6 +152,19 @@ func (s *Store) InsertPattern(ctx context.Context, kind string, summary any) err
 	return err
 }
 
+// QueryPattern reads a single pattern by kind and unmarshals its summary JSON
+// into dest. Returns sql.ErrNoRows if the pattern does not exist.
+func (s *Store) QueryPattern(ctx context.Context, kind string, dest any) error {
+	var blob string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT summary FROM patterns WHERE kind = ?`, kind,
+	).Scan(&blob)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal([]byte(blob), dest)
+}
+
 // --- Suggestions -----------------------------------------------------------
 
 // SuggestionStatus is the lifecycle state of a surfaced suggestion.
