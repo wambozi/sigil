@@ -26,6 +26,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/wambozi/aether/internal/actuator"
 	"github.com/wambozi/aether/internal/analyzer"
 	"github.com/wambozi/aether/internal/cactus"
 	"github.com/wambozi/aether/internal/collector"
@@ -235,6 +236,34 @@ func run(cfg daemonConfig, log *slog.Logger) error {
 		})
 		srv.Notify("suggestions", payload)
 	}
+
+	// --- Actuator registry --------------------------------------------------
+	actuatorNotify := func(a actuator.Action) {
+		payload := socket.MarshalPayload(map[string]any{
+			"type":        "actuation",
+			"id":          a.ID,
+			"description": a.Description,
+			"undo_cmd":    a.UndoCmd,
+		})
+		srv.Notify("actuations", payload)
+	}
+
+	reg := actuator.New(db, actuatorNotify, log)
+	go reg.Run(ctx)
+
+	// Build-split actuator: event-driven, reads from collector.Broadcast.
+	buildSplit := actuator.NewBuildSplitActuator(log)
+	go buildSplit.RunEventLoop(col.Broadcast, func(a actuator.Action, typ string) {
+		reg.Notify(a)
+		// Also send the specific split-pane/close-split type for the shell.
+		payload := socket.MarshalPayload(map[string]any{
+			"type":   typ,
+			"reason": "build_" + typ,
+		})
+		srv.Notify("actuations", payload)
+	})
+
+	log.Info("actuator registry started")
 
 	if err := srv.Start(ctx); err != nil {
 		return fmt.Errorf("start socket: %w", err)
