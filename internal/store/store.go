@@ -9,6 +9,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 	"time"
 
 	"github.com/wambozi/aether/internal/event"
@@ -440,4 +442,78 @@ CREATE TABLE IF NOT EXISTS feedback (
 
 	_, err := db.Exec(schema)
 	return err
+}
+
+// --- Privacy commands -------------------------------------------------------
+
+// Purge deletes all rows from all tables and then removes the SQLite database
+// file from disk.  The Store must not be used after calling Purge.
+func (s *Store) Purge() error {
+	tables := []string{"feedback", "suggestions", "patterns", "ai_interactions", "events"}
+	for _, t := range tables {
+		if _, err := s.db.Exec("DELETE FROM " + t); err != nil {
+			return fmt.Errorf("store: purge table %s: %w", t, err)
+		}
+	}
+
+	// Retrieve the database file path from the PRAGMA so we can remove it.
+	var seq int
+	var dbName, dbPath string
+	row := s.db.QueryRow("PRAGMA database_list")
+	_ = row.Scan(&seq, &dbName, &dbPath)
+
+	if err := s.db.Close(); err != nil {
+		return fmt.Errorf("store: close before purge: %w", err)
+	}
+
+	if dbPath != "" && dbPath != ":memory:" {
+		if err := os.Remove(dbPath); err != nil {
+			return fmt.Errorf("store: remove db file: %w", err)
+		}
+	}
+	return nil
+}
+
+// Export writes all events and suggestions as newline-delimited JSON to w.
+func (s *Store) Export(w io.Writer) error {
+	ctx := context.Background()
+	enc := json.NewEncoder(w)
+
+	events, err := s.QueryEvents(ctx, "", 1<<30)
+	if err != nil {
+		return fmt.Errorf("store: export events: %w", err)
+	}
+	for _, e := range events {
+		if err := enc.Encode(map[string]any{
+			"type":      "event",
+			"id":        e.ID,
+			"kind":      e.Kind,
+			"source":    e.Source,
+			"payload":   e.Payload,
+			"timestamp": e.Timestamp.UTC().Format(time.RFC3339),
+		}); err != nil {
+			return fmt.Errorf("store: encode event: %w", err)
+		}
+	}
+
+	suggestions, err := s.QuerySuggestions(ctx, "", 1<<30)
+	if err != nil {
+		return fmt.Errorf("store: export suggestions: %w", err)
+	}
+	for _, sg := range suggestions {
+		if err := enc.Encode(map[string]any{
+			"type":       "suggestion",
+			"id":         sg.ID,
+			"category":   sg.Category,
+			"confidence": sg.Confidence,
+			"title":      sg.Title,
+			"body":       sg.Body,
+			"action_cmd": sg.ActionCmd,
+			"status":     sg.Status,
+			"created_at": sg.CreatedAt.UTC().Format(time.RFC3339),
+		}); err != nil {
+			return fmt.Errorf("store: encode suggestion: %w", err)
+		}
+	}
+	return nil
 }
