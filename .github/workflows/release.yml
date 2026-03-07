@@ -1,0 +1,56 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build binaries
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          VERSION="${{ github.ref_name }}"
+          LDFLAGS="-X main.version=${VERSION}"
+          go build -ldflags "${LDFLAGS}" -o "aetherd-${{ matrix.goos }}-${{ matrix.goarch }}" ./cmd/aetherd/
+          go build -ldflags "${LDFLAGS}" -o "aetherctl-${{ matrix.goos }}-${{ matrix.goarch }}" ./cmd/aetherctl/
+
+      - name: Generate checksums
+        run: |
+          sha256sum \
+            "aetherd-${{ matrix.goos }}-${{ matrix.goarch }}" \
+            "aetherctl-${{ matrix.goos }}-${{ matrix.goarch }}" \
+            > "checksums-${{ matrix.goos }}-${{ matrix.goarch }}.txt"
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            aetherd-${{ matrix.goos }}-${{ matrix.goarch }}
+            aetherctl-${{ matrix.goos }}-${{ matrix.goarch }}
+            checksums-${{ matrix.goos }}-${{ matrix.goarch }}.txt
