@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 )
 
-const DefaultModel = "lfm2-24b-a2b-q4_k_m"
+const DefaultModel = "qwen2.5-1.5b-q4_k_m"
 
 // ModelSpec describes a downloadable model.
 type ModelSpec struct {
@@ -24,12 +24,19 @@ type ModelSpec struct {
 
 // KnownModels lists models that sigild knows how to fetch.
 var KnownModels = map[string]ModelSpec{
+	"qwen2.5-1.5b-q4_k_m": {
+		Name:      "Qwen 2.5 1.5B (Q4_K_M)",
+		Filename:  "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+		URL:       "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf",
+		SHA256:    "",
+		SizeBytes: 0,
+	},
 	"lfm2-24b-a2b-q4_k_m": {
 		Name:      "Liquid LFM2-24B-A2B (Q4_K_M)",
 		Filename:  "lfm2-24b-a2b-q4_k_m.gguf",
 		URL:       "https://huggingface.co/LiquidAI/LFM2-24B-A2B-GGUF/resolve/main/LFM2-24B-A2B-Q4_K_M.gguf",
-		SHA256:    "", // populated when model is released; skip verification if empty
-		SizeBytes: 0,  // populated when known
+		SHA256:    "",
+		SizeBytes: 0,
 	},
 }
 
