@@ -49,23 +49,26 @@ Raw event data is pruned after 90 days (configurable via `raw_event_days` in
 
 ## What the LLM receives (cloud inference only)
 
-When `routing_mode` is `localfirst`, `remotefirst`, or `remote`, the analyzer
-may send a structured summary to Cactus for deeper reasoning. The summary
-contains:
+When `mode` is `localfirst`, `remotefirst`, or `remote`, the analyzer
+may send a structured summary to the inference engine for deeper reasoning.
+The summary contains:
 
 - Aggregated event counts (e.g., "42 file edits, 7 git events in the past hour")
 - Pattern labels derived locally (e.g., "frequent context switching detected")
 - No raw file paths, no command strings, no file contents
 
 The payload is intentionally coarse to prevent leaking identifying information
-even if Cactus is hosted remotely.
+even if the cloud backend is hosted remotely.
 
-To disable cloud inference entirely, set `routing_mode = "local"` in your
-config file:
+To disable cloud inference entirely, set `mode = "local"` in your config file
+or disable the cloud backend:
 
 ```toml
-[cactus]
-routing_mode = "local"
+[inference]
+mode = "local"
+
+[inference.cloud]
+enabled = false
 ```
 
 ---
@@ -106,14 +109,14 @@ Local events (file paths, cmds, git)
         ↓
   Aggregated counts + pattern labels   ← only this leaves the machine
         ↓
-  Cactus (local or remote endpoint)
+  Inference engine (local or cloud backend)
         ↓
   LLM narrative → stored locally → shown as notification
 ```
 
-The Cactus endpoint is configured at `~/.config/sigil/config.toml`. By
-default it points to `http://127.0.0.1:8080` (local). If you change the URL
-to a remote endpoint, only the aggregated summary described above is sent.
+The inference engine is configured at `~/.config/sigil/config.toml`. By
+default both backends are disabled. If you enable the cloud backend, only
+the aggregated summary described above is sent.
 
 ---
 

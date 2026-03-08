@@ -27,7 +27,7 @@ type FleetReport struct {
 	AIQueryCounts        map[string]int `json:"ai_query_counts"`
 	SuggestionAcceptRate float64        `json:"suggestion_accept_rate"`
 	AdoptionTier         int            `json:"adoption_tier"` // 0-3
-	CactusRoutingRatio   float64        `json:"cactus_routing_ratio"`
+	LocalRoutingRatio    float64        `json:"local_routing_ratio"`
 	BuildSuccessRate     float64        `json:"build_success_rate"`
 	TotalEvents          int            `json:"total_events"`
 }
@@ -221,9 +221,9 @@ func (r *Reporter) computeReport(ctx context.Context) (FleetReport, error) {
 		}
 	}
 
-	// Cactus routing ratio (local / total)
+	// Local routing ratio (local / total)
 	if totalQueries > 0 {
-		report.CactusRoutingRatio = float64(localQueries) / float64(totalQueries)
+		report.LocalRoutingRatio = float64(localQueries) / float64(totalQueries)
 	}
 
 	// Suggestion acceptance rate

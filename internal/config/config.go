@@ -18,7 +18,7 @@ import (
 type Config struct {
 	Daemon    DaemonConfig    `toml:"daemon"`
 	Notifier  NotifierConfig  `toml:"notifier"`
-	Cactus    CactusConfig    `toml:"cactus"`
+	Inference InferenceConfig `toml:"inference"`
 	Retention RetentionConfig `toml:"retention"`
 	Fleet     FleetConfig     `toml:"fleet"`
 }
@@ -47,11 +47,30 @@ type NotifierConfig struct {
 	DigestTime string `toml:"digest_time"` // "HH:MM" in local time
 }
 
-// CactusConfig points at the Cactus inference endpoint.
-type CactusConfig struct {
-	URL            string `toml:"url"`
-	RoutingMode    string `toml:"routing_mode"`
-	TimeoutSeconds int    `toml:"timeout_seconds"`
+// InferenceConfig configures the inference engine backends.
+type InferenceConfig struct {
+	Mode  string              `toml:"mode"`
+	Local InferenceLocalConfig `toml:"local"`
+	Cloud InferenceCloudConfig `toml:"cloud"`
+}
+
+// InferenceLocalConfig configures the local inference backend.
+type InferenceLocalConfig struct {
+	Enabled   bool   `toml:"enabled"`
+	ServerURL string `toml:"server_url"`
+	ServerBin string `toml:"server_bin"`
+	ModelPath string `toml:"model_path"`
+	CtxSize   int    `toml:"ctx_size"`
+	GPULayers int    `toml:"gpu_layers"`
+}
+
+// InferenceCloudConfig configures the cloud inference backend.
+type InferenceCloudConfig struct {
+	Enabled  bool   `toml:"enabled"`
+	Provider string `toml:"provider"`
+	BaseURL  string `toml:"base_url"`
+	APIKey   string `toml:"api_key"`
+	Model    string `toml:"model"`
 }
 
 // RetentionConfig controls how long raw data is kept.
@@ -78,10 +97,8 @@ func Defaults() *Config {
 			Level:      2, // LevelAmbient
 			DigestTime: "09:00",
 		},
-		Cactus: CactusConfig{
-			URL:            "http://127.0.0.1:8080",
-			RoutingMode:    "localfirst",
-			TimeoutSeconds: 60,
+		Inference: InferenceConfig{
+			Mode: "localfirst",
 		},
 		Retention: RetentionConfig{
 			RawEventDays: 90,
@@ -161,14 +178,41 @@ func merge(dst, src *Config) {
 		dst.Notifier.DigestTime = src.Notifier.DigestTime
 	}
 
-	if src.Cactus.URL != "" {
-		dst.Cactus.URL = src.Cactus.URL
+	if src.Inference.Mode != "" {
+		dst.Inference.Mode = src.Inference.Mode
 	}
-	if src.Cactus.RoutingMode != "" {
-		dst.Cactus.RoutingMode = src.Cactus.RoutingMode
+	if src.Inference.Local.Enabled {
+		dst.Inference.Local.Enabled = true
 	}
-	if src.Cactus.TimeoutSeconds != 0 {
-		dst.Cactus.TimeoutSeconds = src.Cactus.TimeoutSeconds
+	if src.Inference.Local.ServerURL != "" {
+		dst.Inference.Local.ServerURL = src.Inference.Local.ServerURL
+	}
+	if src.Inference.Local.ServerBin != "" {
+		dst.Inference.Local.ServerBin = src.Inference.Local.ServerBin
+	}
+	if src.Inference.Local.ModelPath != "" {
+		dst.Inference.Local.ModelPath = src.Inference.Local.ModelPath
+	}
+	if src.Inference.Local.CtxSize != 0 {
+		dst.Inference.Local.CtxSize = src.Inference.Local.CtxSize
+	}
+	if src.Inference.Local.GPULayers != 0 {
+		dst.Inference.Local.GPULayers = src.Inference.Local.GPULayers
+	}
+	if src.Inference.Cloud.Enabled {
+		dst.Inference.Cloud.Enabled = true
+	}
+	if src.Inference.Cloud.Provider != "" {
+		dst.Inference.Cloud.Provider = src.Inference.Cloud.Provider
+	}
+	if src.Inference.Cloud.BaseURL != "" {
+		dst.Inference.Cloud.BaseURL = src.Inference.Cloud.BaseURL
+	}
+	if src.Inference.Cloud.APIKey != "" {
+		dst.Inference.Cloud.APIKey = src.Inference.Cloud.APIKey
+	}
+	if src.Inference.Cloud.Model != "" {
+		dst.Inference.Cloud.Model = src.Inference.Cloud.Model
 	}
 
 	if src.Retention.RawEventDays != 0 {

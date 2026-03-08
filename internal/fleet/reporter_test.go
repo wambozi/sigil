@@ -68,8 +68,8 @@ func TestReporterPreview(t *testing.T) {
 	}
 	// 5 local out of 8 total
 	expectedRatio := 5.0 / 8.0
-	if report.CactusRoutingRatio < expectedRatio-0.01 || report.CactusRoutingRatio > expectedRatio+0.01 {
-		t.Errorf("expected routing ratio ~%.2f, got %.2f", expectedRatio, report.CactusRoutingRatio)
+	if report.LocalRoutingRatio < expectedRatio-0.01 || report.LocalRoutingRatio > expectedRatio+0.01 {
+		t.Errorf("expected routing ratio ~%.2f, got %.2f", expectedRatio, report.LocalRoutingRatio)
 	}
 }
 

@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS daily_metrics (
     ai_query_counts         JSONB NOT NULL DEFAULT '{}',
     suggestion_accept_rate  REAL NOT NULL DEFAULT 0,
     adoption_tier           SMALLINT NOT NULL DEFAULT 0,
-    cactus_routing_ratio    REAL NOT NULL DEFAULT 0,
+    local_routing_ratio    REAL NOT NULL DEFAULT 0,
     build_success_rate      REAL NOT NULL DEFAULT 0,
     total_events            INTEGER NOT NULL DEFAULT 0,
     received_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),

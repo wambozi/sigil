@@ -1,11 +1,11 @@
 // Package analyzer reads the local event store on a timer and sends
-// summarised workflow context to Cactus for pattern analysis.
+// summarised workflow context to the inference engine for pattern analysis.
 // It operates in two tiers:
 //
 //   - Local tier: statistical heuristics over the SQLite store (no network).
-//   - Cloud tier: periodically sends a context summary to Cactus for deeper
-//     reasoning.  Cactus decides whether to handle it on-device or in the
-//     cloud based on the configured routing mode.
+//   - Cloud tier: periodically sends a context summary to the inference engine
+//     for deeper reasoning.  The engine decides whether to handle it on-device
+//     or in the cloud based on the configured routing mode.
 package analyzer
 
 import (
@@ -15,21 +15,21 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wambozi/sigil/internal/cactus"
 	"github.com/wambozi/sigil/internal/event"
+	"github.com/wambozi/sigil/internal/inference"
 	"github.com/wambozi/sigil/internal/notifier"
 	"github.com/wambozi/sigil/internal/store"
 )
 
 // Summary is a structured digest produced by the local heuristic tier and
-// optionally enriched by the Cactus cloud tier.
+// optionally enriched by the inference engine.
 type Summary struct {
-	Period        time.Duration
-	EventCounts   map[event.Kind]int64
-	TopFiles      []store.FileEditCount
-	Insights      string // LLM-generated narrative (may be empty)
-	CactusRouting string // "local" | "cloud" | "" (not yet queried)
-	GeneratedAt   time.Time
+	Period           time.Duration
+	EventCounts      map[event.Kind]int64
+	TopFiles         []store.FileEditCount
+	Insights         string // LLM-generated narrative (may be empty)
+	InferenceRouting string // "local" | "cloud" | "" (not yet queried)
+	GeneratedAt      time.Time
 
 	// AcceptanceRate is the ratio of accepted/(accepted+dismissed) suggestions.
 	AcceptanceRate float64
@@ -42,11 +42,11 @@ type Summary struct {
 	Suggestions []notifier.Suggestion
 }
 
-// Analyzer drives both the local heuristic pass and the periodic Cactus query.
+// Analyzer drives both the local heuristic pass and the periodic inference query.
 type Analyzer struct {
-	store     *store.Store
-	cactus    *cactus.Client
-	detector  *Detector
+	store    *store.Store
+	engine   *inference.Engine
+	detector *Detector
 	interval  time.Duration
 	log       *slog.Logger
 	triggerCh chan struct{}
@@ -59,10 +59,10 @@ type Analyzer struct {
 
 // New creates an Analyzer.  interval is how often a full analysis cycle runs
 // (the product plan specifies hourly for v0).
-func New(s *store.Store, c *cactus.Client, interval time.Duration, log *slog.Logger) *Analyzer {
+func New(s *store.Store, engine *inference.Engine, interval time.Duration, log *slog.Logger) *Analyzer {
 	return &Analyzer{
-		store:     s,
-		cactus:    c,
+		store:  s,
+		engine: engine,
 		detector:  NewDetector(s, log),
 		interval:  interval,
 		log:       log,
@@ -111,14 +111,14 @@ func (a *Analyzer) runCycle(ctx context.Context) {
 		return
 	}
 
-	// Cloud pass — ping Cactus before each attempt so the daemon reconnects
-	// automatically if Cactus was unavailable at startup or went down briefly.
-	if a.cactus != nil {
+	// Cloud pass — ping the inference engine before each attempt so the daemon
+	// reconnects automatically if it was unavailable at startup or went down.
+	if a.engine != nil {
 		pingCtx, cancelPing := context.WithTimeout(ctx, 5*time.Second)
-		pingErr := a.cactus.Ping(pingCtx)
+		pingErr := a.engine.Ping(pingCtx)
 		cancelPing()
 		if pingErr != nil {
-			a.log.Warn("analyzer: cactus unreachable — skipping cloud pass", "err", pingErr)
+			a.log.Warn("analyzer: inference engine unreachable — skipping cloud pass", "err", pingErr)
 		} else if err := a.cloudPass(ctx, &summary); err != nil {
 			// Non-fatal: local summary is still useful without LLM enrichment.
 			a.log.Warn("analyzer: cloud pass", "err", err)
@@ -128,7 +128,7 @@ func (a *Analyzer) runCycle(ctx context.Context) {
 	summary.GeneratedAt = time.Now()
 	a.log.Info("analyzer: cycle complete",
 		"insights_chars", len(summary.Insights),
-		"routing", summary.CactusRouting,
+		"routing", summary.InferenceRouting,
 	)
 
 	if a.OnSummary != nil {
@@ -191,12 +191,12 @@ func (a *Analyzer) localPass(ctx context.Context) (Summary, error) {
 	return summary, nil
 }
 
-// cloudPass sends a prose summary of recent activity to Cactus and stores the
-// LLM's response in the summary.Insights field.
+// cloudPass sends a prose summary of recent activity to the inference engine
+// and stores the LLM's response in the summary.Insights field.
 func (a *Analyzer) cloudPass(ctx context.Context, s *Summary) error {
 	userPrompt := buildPrompt(s)
 
-	result, err := a.cactus.Complete(ctx,
+	result, err := a.engine.Complete(ctx,
 		systemPrompt,
 		userPrompt,
 	)
@@ -205,7 +205,7 @@ func (a *Analyzer) cloudPass(ctx context.Context, s *Summary) error {
 	}
 
 	s.Insights = result.Content
-	s.CactusRouting = result.Routing
+	s.InferenceRouting = result.Routing
 
 	// Persist the AI interaction so fleet metrics can aggregate it.
 	_ = a.store.InsertAIInteraction(ctx, event.AIInteraction{

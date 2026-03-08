@@ -23,8 +23,8 @@ func TestLoad(t *testing.T) {
 				if cfg.Notifier.Level != 2 {
 					t.Errorf("Notifier.Level = %d, want 2", cfg.Notifier.Level)
 				}
-				if cfg.Cactus.URL != "http://127.0.0.1:8080" {
-					t.Errorf("Cactus.URL = %q, want default", cfg.Cactus.URL)
+				if cfg.Inference.Mode != "localfirst" {
+					t.Errorf("Inference.Mode = %q, want default", cfg.Inference.Mode)
 				}
 				if cfg.Retention.RawEventDays != 90 {
 					t.Errorf("RawEventDays = %d, want 90", cfg.Retention.RawEventDays)
@@ -37,15 +37,15 @@ func TestLoad(t *testing.T) {
 [daemon]
 log_level = "debug"
 
-[cactus]
-url = "http://10.0.0.1:8080"
+[inference]
+mode = "remote"
 `,
 			check: func(t *testing.T, cfg *Config) {
 				if cfg.Daemon.LogLevel != "debug" {
 					t.Errorf("LogLevel = %q, want %q", cfg.Daemon.LogLevel, "debug")
 				}
-				if cfg.Cactus.URL != "http://10.0.0.1:8080" {
-					t.Errorf("Cactus.URL = %q, want overridden value", cfg.Cactus.URL)
+				if cfg.Inference.Mode != "remote" {
+					t.Errorf("Inference.Mode = %q, want overridden value", cfg.Inference.Mode)
 				}
 				// Unset fields keep defaults.
 				if cfg.Notifier.Level != 2 {
@@ -53,10 +53,6 @@ url = "http://10.0.0.1:8080"
 				}
 				if cfg.Retention.RawEventDays != 90 {
 					t.Errorf("RawEventDays = %d, want 90 (default)", cfg.Retention.RawEventDays)
-				}
-				// Cactus routing_mode not set in file, should keep default.
-				if cfg.Cactus.RoutingMode != "localfirst" {
-					t.Errorf("RoutingMode = %q, want %q", cfg.Cactus.RoutingMode, "localfirst")
 				}
 			},
 		},
@@ -74,10 +70,17 @@ socket_path = "/tmp/test.sock"
 level = 3
 digest_time = "08:00"
 
-[cactus]
-url = "http://remote:9090"
-routing_mode = "remote"
-timeout_seconds = 120
+[inference]
+mode = "remote"
+
+[inference.local]
+enabled = true
+server_url = "http://127.0.0.1:8081"
+
+[inference.cloud]
+enabled = true
+provider = "openai"
+base_url = "http://remote:9090"
 
 [retention]
 raw_event_days = 30
@@ -95,11 +98,20 @@ raw_event_days = 30
 				if cfg.Notifier.DigestTime != "08:00" {
 					t.Errorf("DigestTime = %q, want 08:00", cfg.Notifier.DigestTime)
 				}
-				if cfg.Cactus.RoutingMode != "remote" {
-					t.Errorf("RoutingMode = %q", cfg.Cactus.RoutingMode)
+				if cfg.Inference.Mode != "remote" {
+					t.Errorf("Inference.Mode = %q", cfg.Inference.Mode)
 				}
-				if cfg.Cactus.TimeoutSeconds != 120 {
-					t.Errorf("TimeoutSeconds = %d", cfg.Cactus.TimeoutSeconds)
+				if !cfg.Inference.Local.Enabled {
+					t.Error("Inference.Local.Enabled = false, want true")
+				}
+				if cfg.Inference.Local.ServerURL != "http://127.0.0.1:8081" {
+					t.Errorf("Inference.Local.ServerURL = %q", cfg.Inference.Local.ServerURL)
+				}
+				if !cfg.Inference.Cloud.Enabled {
+					t.Error("Inference.Cloud.Enabled = false, want true")
+				}
+				if cfg.Inference.Cloud.BaseURL != "http://remote:9090" {
+					t.Errorf("Inference.Cloud.BaseURL = %q", cfg.Inference.Cloud.BaseURL)
 				}
 				if cfg.Retention.RawEventDays != 30 {
 					t.Errorf("RawEventDays = %d, want 30", cfg.Retention.RawEventDays)

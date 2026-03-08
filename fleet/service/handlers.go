@@ -25,7 +25,7 @@ type FleetReport struct {
 	AIQueryCounts        map[string]int `json:"ai_query_counts"`
 	SuggestionAcceptRate float64        `json:"suggestion_accept_rate"`
 	AdoptionTier         int            `json:"adoption_tier"`
-	CactusRoutingRatio   float64        `json:"cactus_routing_ratio"`
+	LocalRoutingRatio    float64        `json:"local_routing_ratio"`
 	BuildSuccessRate     float64        `json:"build_success_rate"`
 	TotalEvents          int            `json:"total_events"`
 }
@@ -55,18 +55,18 @@ func (h *handlers) handleIngestReport(w http.ResponseWriter, r *http.Request) {
 
 	_, err := h.db.Exec(r.Context(), `
 		INSERT INTO daily_metrics (node_id, date, ai_query_counts, suggestion_accept_rate,
-			adoption_tier, cactus_routing_ratio, build_success_rate, total_events)
+			adoption_tier, local_routing_ratio, build_success_rate, total_events)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (node_id, date) DO UPDATE SET
 			ai_query_counts = $3,
 			suggestion_accept_rate = $4,
 			adoption_tier = $5,
-			cactus_routing_ratio = $6,
+			local_routing_ratio = $6,
 			build_success_rate = $7,
 			total_events = $8,
 			received_at = NOW()
 	`, report.NodeID, date, queryCounts, report.SuggestionAcceptRate,
-		report.AdoptionTier, report.CactusRoutingRatio, report.BuildSuccessRate, report.TotalEvents)
+		report.AdoptionTier, report.LocalRoutingRatio, report.BuildSuccessRate, report.TotalEvents)
 
 	if err != nil {
 		h.log.Error("ingest report", "err", err)
@@ -126,7 +126,7 @@ func (h *handlers) queryOverview(r *http.Request, orgID, from, to string) (any, 
 		SELECT date, COUNT(*) as node_count,
 			AVG(suggestion_accept_rate) as avg_accept_rate,
 			AVG(adoption_tier) as avg_tier,
-			AVG(cactus_routing_ratio) as avg_routing_ratio,
+			AVG(local_routing_ratio) as avg_routing_ratio,
 			AVG(build_success_rate) as avg_build_rate,
 			SUM(total_events) as total_events
 		FROM daily_metrics dm
@@ -236,9 +236,9 @@ func (h *handlers) queryVelocity(r *http.Request, orgID, from, to string) (any, 
 func (h *handlers) queryCost(r *http.Request, orgID, from, to string) (any, error) {
 	rows, err := h.db.Query(r.Context(), `
 		SELECT date,
-			AVG(cactus_routing_ratio) as avg_local_ratio,
+			AVG(local_routing_ratio) as avg_local_ratio,
 			SUM(total_events) as total_events,
-			SUM(total_events * (1.0 - cactus_routing_ratio)) as cloud_queries
+			SUM(total_events * (1.0 - local_routing_ratio)) as cloud_queries
 		FROM daily_metrics
 		WHERE date >= $1 AND date <= $2
 		GROUP BY date ORDER BY date
@@ -275,7 +275,7 @@ func (h *handlers) queryCompliance(r *http.Request, orgID, from, to string) (any
 	var totalNodes int
 	var avgLocalRatio float64
 	err := h.db.QueryRow(r.Context(), `
-		SELECT COUNT(DISTINCT node_id), COALESCE(AVG(cactus_routing_ratio), 0)
+		SELECT COUNT(DISTINCT node_id), COALESCE(AVG(local_routing_ratio), 0)
 		FROM daily_metrics
 		WHERE date >= $1 AND date <= $2
 	`, from, to).Scan(&totalNodes, &avgLocalRatio)

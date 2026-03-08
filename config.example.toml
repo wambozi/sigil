@@ -17,12 +17,25 @@ watch_dirs = ["~/code"]
 ignore_patterns = [".git", "node_modules", "vendor", "__pycache__", ".next", "dist"]
 
 [inference]
-# Cactus Compute endpoint (OpenAI-compatible).
-cactus_url = "http://127.0.0.1:8080"
-# Model routing: local | localfirst | remotefirst | remote
-cactus_route = "localfirst"
-# Model name requested from Cactus.
-cactus_model = "local"
+# Routing mode: local | localfirst | remotefirst | remote
+mode = "localfirst"
+
+[inference.local]
+# Enable local inference backend (e.g. llama-server).
+enabled = false
+# server_url = "http://127.0.0.1:8081"
+# server_bin = "/usr/bin/llama-server"
+# model_path = ""
+# ctx_size = 4096
+# gpu_layers = 0
+
+[inference.cloud]
+# Enable cloud inference backend.
+enabled = false
+# provider = "openai"     # "openai" or "anthropic"
+# base_url = ""
+# api_key = ""
+# model = ""
 
 [schedule]
 # How often to run a full analysis cycle.
