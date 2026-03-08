@@ -1,6 +1,6 @@
 module github.com/wambozi/sigil
 
-go 1.26
+go 1.24
 
 require (
 	github.com/fsnotify/fsnotify v1.7.0
