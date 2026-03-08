@@ -1,0 +1,52 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/wambozi/aether-fleet
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8090
+
+config:
+  listenAddr: ":8090"
+  dbURL: "postgres://aether:changeme@postgresql:5432/aether_fleet?sslmode=disable"
+  cloudCostPerQuery: "0.01"
+  oidcIssuer: ""
+  oidcClientID: ""
+  oidcAdminGroup: "aether-admins"
+
+secrets:
+  apiKey: ""
+  oidcClientSecret: ""
+  dbPassword: "changeme"
+
+postgresql:
+  enabled: true
+  auth:
+    username: aether
+    password: changeme
+    database: aether_fleet
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10

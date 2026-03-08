@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-config
+data:
+  FLEET_LISTEN_ADDR: {{ .Values.config.listenAddr | quote }}
+  FLEET_DB_URL: {{ .Values.config.dbURL | quote }}
+  FLEET_CLOUD_COST_PER_QUERY: {{ .Values.config.cloudCostPerQuery | quote }}
+  {{- if .Values.config.oidcIssuer }}
+  FLEET_OIDC_ISSUER: {{ .Values.config.oidcIssuer | quote }}
+  FLEET_OIDC_CLIENT_ID: {{ .Values.config.oidcClientID | quote }}
+  FLEET_OIDC_ADMIN_GROUP: {{ .Values.config.oidcAdminGroup | quote }}
+  {{- end }}
