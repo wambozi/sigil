@@ -32,6 +32,15 @@ type FleetReport struct {
 	TotalEvents          int            `json:"total_events"`
 }
 
+// RoutingPolicy defines centralized routing and model restrictions
+// fetched from the Fleet Aggregation Layer.
+type RoutingPolicy struct {
+	RoutingMode      string   `json:"routing_mode"`
+	AllowedProviders []string `json:"allowed_providers"`
+	AllowedModelIDs  []string `json:"allowed_model_ids"`
+	EnforcedAt       time.Time `json:"enforced_at"`
+}
+
 // Reporter computes and sends anonymized aggregate metrics to the Fleet Aggregation Layer.
 type Reporter struct {
 	store    *store.Store
@@ -41,8 +50,9 @@ type Reporter struct {
 	interval time.Duration
 	log      *slog.Logger
 
-	mu    sync.Mutex
-	queue []FleetReport
+	mu     sync.Mutex
+	queue  []FleetReport
+	policy *RoutingPolicy
 }
 
 // New creates a Reporter from the given config.
@@ -78,6 +88,9 @@ func (r *Reporter) Run(ctx context.Context) {
 
 	r.log.Info("fleet reporter started", "endpoint", r.endpoint, "interval", r.interval)
 
+	// Fetch policy at startup
+	r.fetchPolicy(ctx)
+
 	ticker := time.NewTicker(r.interval)
 	defer ticker.Stop()
 
@@ -87,6 +100,7 @@ func (r *Reporter) Run(ctx context.Context) {
 			return
 		case <-ticker.C:
 			r.cycle(ctx)
+			r.fetchPolicy(ctx)
 		}
 	}
 }
@@ -118,6 +132,50 @@ func (r *Reporter) OptOut() {
 	r.queue = nil
 	r.enabled = false
 	r.log.Info("fleet reporter: opted out")
+}
+
+// CurrentPolicy returns the last fetched routing policy, or nil if none.
+func (r *Reporter) CurrentPolicy() *RoutingPolicy {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.policy
+}
+
+// fetchPolicy retrieves the routing policy from the fleet endpoint.
+func (r *Reporter) fetchPolicy(ctx context.Context) {
+	if r.endpoint == "" {
+		return
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		r.endpoint+"/api/v1/policy", nil)
+	if err != nil {
+		r.log.Warn("fleet reporter: create policy request", "err", err)
+		return
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		r.log.Warn("fleet reporter: fetch policy", "err", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		r.log.Warn("fleet reporter: policy endpoint returned", "status", resp.StatusCode)
+		return
+	}
+
+	var policy RoutingPolicy
+	if err := json.NewDecoder(resp.Body).Decode(&policy); err != nil {
+		r.log.Warn("fleet reporter: decode policy", "err", err)
+		return
+	}
+
+	r.mu.Lock()
+	r.policy = &policy
+	r.mu.Unlock()
+	r.log.Info("fleet reporter: policy updated", "routing_mode", policy.RoutingMode)
 }
 
 // Enabled returns whether fleet reporting is currently enabled.

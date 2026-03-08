@@ -69,6 +69,14 @@ CREATE TABLE IF NOT EXISTS daily_metrics (
 
 CREATE INDEX IF NOT EXISTS idx_daily_metrics_date ON daily_metrics(date);
 CREATE INDEX IF NOT EXISTS idx_daily_metrics_node ON daily_metrics(node_id);
+
+CREATE TABLE IF NOT EXISTS policies (
+    id          SERIAL PRIMARY KEY,
+    org_id      INTEGER NOT NULL REFERENCES orgs(id),
+    policy      JSONB NOT NULL,
+    enforced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_policies_org ON policies(org_id);
 `
 	_, err := pool.Exec(ctx, schema)
 	if err != nil {

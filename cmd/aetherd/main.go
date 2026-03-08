@@ -882,4 +882,15 @@ func registerFleetHandlers(srv *socket.Server, reporter *fleet.Reporter) {
 		reporter.OptOut()
 		return socket.Response{OK: true, Payload: socket.MarshalPayload(map[string]any{"ok": true})}
 	})
+
+	srv.Handle("fleet-policy", func(ctx context.Context, _ socket.Request) socket.Response {
+		if reporter == nil {
+			return socket.Response{Error: "fleet reporting is not enabled"}
+		}
+		policy := reporter.CurrentPolicy()
+		if policy == nil {
+			return socket.Response{OK: true, Payload: socket.MarshalPayload(map[string]any{"policy": nil})}
+		}
+		return socket.Response{OK: true, Payload: socket.MarshalPayload(policy)}
+	})
 }

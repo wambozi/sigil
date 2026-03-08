@@ -38,6 +38,7 @@ func main() {
 	mux.HandleFunc("POST /api/v1/reports", h.handleIngestReport)
 	mux.HandleFunc("GET /api/v1/metrics", h.handleQueryMetrics)
 	mux.HandleFunc("GET /healthz", h.handleHealthz)
+	h.registerPolicyRoutes(mux)
 
 	srv := &http.Server{
 		Addr:         cfg.ListenAddr,
