@@ -1,6 +1,6 @@
 apiVersion: v2
-name: aether-fleet
-description: Aether Fleet Aggregation Layer
+name: sigil-fleet
+description: Sigil Fleet Aggregation Layer
 type: application
 version: 0.1.0
 appVersion: "0.1.0"

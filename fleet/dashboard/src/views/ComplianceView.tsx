@@ -15,7 +15,7 @@ export function ComplianceView() {
     if (!data) return;
 
     const summary = [
-      `Aether Fleet Compliance Audit — ${data.date_range_from} to ${data.date_range_to}`,
+      `Sigil Fleet Compliance Audit — ${data.date_range_from} to ${data.date_range_to}`,
       `Organization: ${data.org_name}`,
       `Total nodes reporting: ${data.total_nodes}`,
       `AI inference routing: ${data.local_pct.toFixed(1)}% on-device, ${data.cloud_pct.toFixed(1)}% cloud`,
@@ -27,7 +27,7 @@ export function ComplianceView() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `aether-compliance-audit-${data.date_range_from}-${data.date_range_to}.txt`;
+    a.download = `sigil-compliance-audit-${data.date_range_from}-${data.date_range_to}.txt`;
     a.click();
     URL.revokeObjectURL(url);
   }

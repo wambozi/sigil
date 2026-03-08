@@ -1,4 +1,4 @@
-// Package store provides the local SQLite persistence layer for aetherd.
+// Package store provides the local SQLite persistence layer for sigild.
 // All raw telemetry is stored here and never leaves the machine.
 // The store is opened in WAL mode to allow the analyzer to read while
 // the collector writes.
@@ -13,7 +13,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/wambozi/aether/internal/event"
+	"github.com/wambozi/sigil/internal/event"
 	_ "modernc.org/sqlite" // registers the "sqlite" driver
 )
 

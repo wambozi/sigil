@@ -1,5 +1,5 @@
 // Command fleet-service is the Fleet Aggregation Layer HTTP service.
-// It receives anonymized metrics from Fleet Reporters running in aetherd
+// It receives anonymized metrics from Fleet Reporters running in sigild
 // instances, stores them in PostgreSQL, and serves aggregation queries
 // for the leadership dashboard.
 package main
@@ -81,7 +81,7 @@ type serviceConfig struct {
 
 func loadConfig() serviceConfig {
 	cfg := serviceConfig{
-		DBURL:             envOr("FLEET_DB_URL", "postgres://localhost:5432/aether_fleet?sslmode=disable"),
+		DBURL:             envOr("FLEET_DB_URL", "postgres://localhost:5432/sigil_fleet?sslmode=disable"),
 		ListenAddr:        envOr("FLEET_LISTEN_ADDR", ":8090"),
 		APIKey:            os.Getenv("FLEET_API_KEY"),
 		CloudCostPerQuery: 0.01,

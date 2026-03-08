@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# install.sh — one-line installer for Aether OS daemon
+# install.sh — one-line installer for Sigil OS daemon
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/wambozi/aether/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/wambozi/sigil/main/scripts/install.sh | bash
 #
 # Supports: linux/amd64, linux/arm64
 
 set -euo pipefail
 
-REPO="wambozi/aether"
+REPO="wambozi/sigil"
 INSTALL_DIR="${HOME}/.local/bin"
 API_BASE="https://api.github.com/repos/${REPO}"
 DOWNLOAD_BASE="https://github.com/${REPO}/releases/download"
@@ -50,8 +50,8 @@ echo "Latest release: ${LATEST_TAG}"
 # --- Download binaries and checksums ----------------------------------------
 
 SUFFIX="${OS}-${ARCH}"
-AETHERD_BIN="aetherd-${SUFFIX}"
-AETHERCTL_BIN="aetherctl-${SUFFIX}"
+SIGILD_BIN="sigild-${SUFFIX}"
+SIGILCTL_BIN="sigilctl-${SUFFIX}"
 CHECKSUM_FILE="checksums-${SUFFIX}.txt"
 
 TMPDIR="$(mktemp -d)"
@@ -59,7 +59,7 @@ trap 'rm -rf "${TMPDIR}"' EXIT
 
 cd "${TMPDIR}"
 
-for FILE in "${AETHERD_BIN}" "${AETHERCTL_BIN}" "${CHECKSUM_FILE}"; do
+for FILE in "${SIGILD_BIN}" "${SIGILCTL_BIN}" "${CHECKSUM_FILE}"; do
   URL="${DOWNLOAD_BASE}/${LATEST_TAG}/${FILE}"
   echo "Downloading ${FILE}..."
   curl -fsSL -o "${FILE}" "${URL}"
@@ -75,10 +75,10 @@ echo "Checksums OK."
 
 mkdir -p "${INSTALL_DIR}"
 
-install -m 755 "${AETHERD_BIN}"  "${INSTALL_DIR}/aetherd"
-install -m 755 "${AETHERCTL_BIN}" "${INSTALL_DIR}/aetherctl"
+install -m 755 "${SIGILD_BIN}"  "${INSTALL_DIR}/sigild"
+install -m 755 "${SIGILCTL_BIN}" "${INSTALL_DIR}/sigilctl"
 
-echo "Installed to ${INSTALL_DIR}/aetherd and ${INSTALL_DIR}/aetherctl"
+echo "Installed to ${INSTALL_DIR}/sigild and ${INSTALL_DIR}/sigilctl"
 
 # --- Warn if not in PATH ----------------------------------------------------
 
@@ -89,11 +89,11 @@ if ! echo "${PATH}" | tr ':' '\n' | grep -qx "${INSTALL_DIR}"; then
   echo "  export PATH=\"\${HOME}/.local/bin:\${PATH}\""
 fi
 
-# --- Run aetherd init -------------------------------------------------------
+# --- Run sigild init -------------------------------------------------------
 
 echo ""
-echo "Running aetherd init..."
-"${INSTALL_DIR}/aetherd" init
+echo "Running sigild init..."
+"${INSTALL_DIR}/sigild" init
 
 echo ""
-echo "Installation complete. Run 'aetherctl status' to verify."
+echo "Installation complete. Run 'sigilctl status' to verify."

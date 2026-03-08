@@ -6,5 +6,5 @@ result-*
 .direnv
 *.iso
 *.exe
-aetherctl
-aetherd
+sigilctl
+sigild

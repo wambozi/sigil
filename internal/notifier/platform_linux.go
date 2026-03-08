@@ -10,7 +10,7 @@ import (
 )
 
 // linuxPlatform delivers notifications via notify-send (libnotify / D-Bus).
-// It is the only backend for v0 on Aether OS (NixOS + Hyprland/Wayland).
+// It is the only backend for v0 on Sigil OS (NixOS + Hyprland/Wayland).
 type linuxPlatform struct {
 	log *slog.Logger
 }
@@ -28,7 +28,7 @@ func (p *linuxPlatform) send(title, body string, _ bool) {
 	// -t 8000 makes the notification auto-dismiss after 8 seconds (ambient UX).
 	cmd := exec.CommandContext(ctx,
 		"notify-send",
-		"-a", "aetherd",
+		"-a", "sigild",
 		"-i", "utilities-system-monitor",
 		"-t", "8000",
 		title,

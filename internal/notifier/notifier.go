@@ -1,6 +1,6 @@
 // Package notifier surfaces analyzer suggestions to the user at a configured
 // aggression level.  All suggestions are persisted to the store regardless of
-// level so they are always queryable via aetherctl.
+// level so they are always queryable via sigilctl.
 //
 // Five levels (matching the product plan):
 //
@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wambozi/aether/internal/store"
+	"github.com/wambozi/sigil/internal/store"
 )
 
 // Level controls how aggressively suggestions are surfaced.
@@ -117,7 +117,7 @@ func (n *Notifier) SetLevel(l Level) {
 func (n *Notifier) Surface(sg Suggestion) {
 	ctx := context.Background()
 
-	// Always persist — every suggestion is queryable via aetherctl regardless
+	// Always persist — every suggestion is queryable via sigilctl regardless
 	// of whether it was ever shown.
 	id, err := n.store.InsertSuggestion(ctx, store.Suggestion{
 		Category:   sg.Category,
@@ -213,7 +213,7 @@ func (n *Notifier) FlushDigest() {
 		body += "• " + sg.Title + ": " + sg.Body
 	}
 
-	n.platform.send("Aether daily digest", body, false)
+	n.platform.send("Sigil daily digest", body, false)
 }
 
 // show marks the suggestion as shown, sends the notification, then marks it

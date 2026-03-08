@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wambozi/aether/internal/event"
-	"github.com/wambozi/aether/internal/notifier"
-	"github.com/wambozi/aether/internal/store"
+	"github.com/wambozi/sigil/internal/event"
+	"github.com/wambozi/sigil/internal/notifier"
+	"github.com/wambozi/sigil/internal/store"
 )
 
 // editTestWindow is the maximum elapsed time between a file edit and a

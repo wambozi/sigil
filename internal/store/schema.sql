@@ -1,4 +1,4 @@
--- Aether daemon local store schema.
+-- Sigil daemon local store schema.
 -- SQLite in WAL mode — enables concurrent readers alongside the writer.
 -- Nothing in this file ever leaves the machine.
 

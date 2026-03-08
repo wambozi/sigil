@@ -16,5 +16,5 @@ test:
 check: fmt vet test
 
 build:
-	$(GO) build ./cmd/aetherd/
-	$(GO) build ./cmd/aetherctl/
+	$(GO) build ./cmd/sigild/
+	$(GO) build ./cmd/sigilctl/

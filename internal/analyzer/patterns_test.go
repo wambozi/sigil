@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wambozi/aether/internal/event"
-	"github.com/wambozi/aether/internal/notifier"
-	"github.com/wambozi/aether/internal/store"
+	"github.com/wambozi/sigil/internal/event"
+	"github.com/wambozi/sigil/internal/notifier"
+	"github.com/wambozi/sigil/internal/store"
 )
 
 // insertFile inserts a file event with the given path and timestamp.

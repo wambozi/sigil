@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wambozi/aether/internal/config"
-	"github.com/wambozi/aether/internal/event"
-	"github.com/wambozi/aether/internal/store"
+	"github.com/wambozi/sigil/internal/config"
+	"github.com/wambozi/sigil/internal/event"
+	"github.com/wambozi/sigil/internal/store"
 )
 
 func testStore(t *testing.T) *store.Store {

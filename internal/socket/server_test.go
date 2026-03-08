@@ -111,7 +111,7 @@ func TestServer_handlerReceivesPayload(t *testing.T) {
 		return Response{OK: true, Payload: MarshalPayload(p)}
 	})
 
-	payload, _ := json.Marshal(echoPayload{Msg: "hello aether"})
+	payload, _ := json.Marshal(echoPayload{Msg: "hello sigil"})
 	resp := send(t, sockPath, Request{Method: "echo", Payload: payload})
 
 	if !resp.OK {
@@ -121,8 +121,8 @@ func TestServer_handlerReceivesPayload(t *testing.T) {
 	if err := json.Unmarshal(resp.Payload, &got); err != nil {
 		t.Fatalf("unmarshal response payload: %v", err)
 	}
-	if got.Msg != "hello aether" {
-		t.Errorf("echo: got %q, want %q", got.Msg, "hello aether")
+	if got.Msg != "hello sigil" {
+		t.Errorf("echo: got %q, want %q", got.Msg, "hello sigil")
 	}
 }
 

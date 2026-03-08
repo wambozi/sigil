@@ -1,10 +1,10 @@
 [Unit]
-Description=Aether daemon
+Description=Sigil daemon
 After=default.target
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/aetherd
+ExecStart=%h/.local/bin/sigild
 Restart=on-failure
 RestartSec=5
 MemoryMax=150M

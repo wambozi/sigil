@@ -37,20 +37,20 @@ jobs:
         run: |
           VERSION="${{ github.ref_name }}"
           LDFLAGS="-X main.version=${VERSION}"
-          go build -ldflags "${LDFLAGS}" -o "aetherd-${{ matrix.goos }}-${{ matrix.goarch }}" ./cmd/aetherd/
-          go build -ldflags "${LDFLAGS}" -o "aetherctl-${{ matrix.goos }}-${{ matrix.goarch }}" ./cmd/aetherctl/
+          go build -ldflags "${LDFLAGS}" -o "sigild-${{ matrix.goos }}-${{ matrix.goarch }}" ./cmd/sigild/
+          go build -ldflags "${LDFLAGS}" -o "sigilctl-${{ matrix.goos }}-${{ matrix.goarch }}" ./cmd/sigilctl/
 
       - name: Generate checksums
         run: |
           sha256sum \
-            "aetherd-${{ matrix.goos }}-${{ matrix.goarch }}" \
-            "aetherctl-${{ matrix.goos }}-${{ matrix.goarch }}" \
+            "sigild-${{ matrix.goos }}-${{ matrix.goarch }}" \
+            "sigilctl-${{ matrix.goos }}-${{ matrix.goarch }}" \
             > "checksums-${{ matrix.goos }}-${{ matrix.goarch }}.txt"
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            aetherd-${{ matrix.goos }}-${{ matrix.goarch }}
-            aetherctl-${{ matrix.goos }}-${{ matrix.goarch }}
+            sigild-${{ matrix.goos }}-${{ matrix.goarch }}
+            sigilctl-${{ matrix.goos }}-${{ matrix.goarch }}
             checksums-${{ matrix.goos }}-${{ matrix.goarch }}.txt

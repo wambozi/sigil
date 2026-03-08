@@ -1,7 +1,7 @@
 replicaCount: 1
 
 image:
-  repository: ghcr.io/wambozi/aether-fleet
+  repository: ghcr.io/wambozi/sigil-fleet
   tag: "0.1.0"
   pullPolicy: IfNotPresent
 
@@ -11,11 +11,11 @@ service:
 
 config:
   listenAddr: ":8090"
-  dbURL: "postgres://aether:changeme@postgresql:5432/aether_fleet?sslmode=disable"
+  dbURL: "postgres://sigil:changeme@postgresql:5432/sigil_fleet?sslmode=disable"
   cloudCostPerQuery: "0.01"
   oidcIssuer: ""
   oidcClientID: ""
-  oidcAdminGroup: "aether-admins"
+  oidcAdminGroup: "sigil-admins"
 
 secrets:
   apiKey: ""
@@ -25,9 +25,9 @@ secrets:
 postgresql:
   enabled: true
   auth:
-    username: aether
+    username: sigil
     password: changeme
-    database: aether_fleet
+    database: sigil_fleet
 
 resources:
   limits:

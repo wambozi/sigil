@@ -1,9 +1,9 @@
-# Aether daemon configuration
-# Copy to ~/.config/aether/config.toml and edit as needed.
+# Sigil daemon configuration
+# Copy to ~/.config/sigil/config.toml and edit as needed.
 # All paths support ~ expansion.
 
 [notifier]
-# 0 = silent (store only, query via aetherctl)
+# 0 = silent (store only, query via sigilctl)
 # 1 = digest (one daily summary at digest_time)
 # 2 = ambient (real-time toasts, no actions) — default
 # 3 = conversational (toasts with action buttons)
@@ -31,9 +31,9 @@ analyze_every = "1h"
 digest_time = "09:00"
 
 [store]
-# SQLite database path. Default: $XDG_DATA_HOME/aetherd/data.db
-# db_path = "~/.local/share/aetherd/data.db"
+# SQLite database path. Default: $XDG_DATA_HOME/sigild/data.db
+# db_path = "~/.local/share/sigild/data.db"
 
 [socket]
-# Unix socket path. Default: $XDG_RUNTIME_DIR/aetherd.sock
-# socket_path = "/run/user/1000/aetherd.sock"
+# Unix socket path. Default: $XDG_RUNTIME_DIR/sigild.sock
+# socket_path = "/run/user/1000/sigild.sock"

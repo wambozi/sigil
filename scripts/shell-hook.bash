@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# aether shell hook — source this from ~/.bashrc
-# Added automatically by: aetherd init
+# sigil shell hook — source this from ~/.bashrc
+# Added automatically by: sigild init
 #
 # Uses PROMPT_COMMAND to capture each executed command.
-# Sends metadata to aetherd via Unix socket (non-blocking).
+# Sends metadata to sigild via Unix socket (non-blocking).
 
-_aetherd_prompt_cmd() {
+_sigild_prompt_cmd() {
     local _exit=$?
     local _cmd
     _cmd="$(HISTTIMEFORMAT='' history 1 | sed 's/^[[:space:]]*[0-9]*[[:space:]]*//')"
     [[ -z "$_cmd" ]] && return 0
 
-    local _sock="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/aetherd.sock"
+    local _sock="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/sigild.sock"
     [[ ! -S "$_sock" ]] && return 0
 
     local _cmd_json="${_cmd//\\/\\\\}"
@@ -28,6 +28,6 @@ _aetherd_prompt_cmd() {
 }
 
 # Prepend to PROMPT_COMMAND without clobbering existing entries
-if [[ "$PROMPT_COMMAND" != *"_aetherd_prompt_cmd"* ]]; then
-    PROMPT_COMMAND="_aetherd_prompt_cmd${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
+if [[ "$PROMPT_COMMAND" != *"_sigild_prompt_cmd"* ]]; then
+    PROMPT_COMMAND="_sigild_prompt_cmd${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
 fi

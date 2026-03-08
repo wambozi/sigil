@@ -1,4 +1,4 @@
-module github.com/wambozi/aether/fleet/service
+module github.com/wambozi/sigil/fleet/service
 
 go 1.23
 

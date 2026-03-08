@@ -1,4 +1,4 @@
-// Package event defines the shared event types flowing through aetherd.
+// Package event defines the shared event types flowing through sigild.
 // All collector sources emit Events; the store persists them; the analyzer
 // reads them.  Keeping these types in their own package breaks import cycles.
 package event

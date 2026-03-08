@@ -1,5 +1,5 @@
-// Package socket implements the Unix domain socket server that the Aether Shell
-// (Phase 2) and aetherctl will talk to.  The protocol is newline-delimited
+// Package socket implements the Unix domain socket server that the Sigil Shell
+// (Phase 2) and sigilctl will talk to.  The protocol is newline-delimited
 // JSON: one Request per line, one Response per line.
 package socket
 
@@ -53,7 +53,7 @@ type Server struct {
 }
 
 // New creates a Server.  socketPath is the file-system path for the socket
-// (e.g. "/run/user/1000/aetherd.sock").
+// (e.g. "/run/user/1000/sigild.sock").
 func New(socketPath string, log *slog.Logger) *Server {
 	return &Server{
 		socketPath:  socketPath,

@@ -15,9 +15,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wambozi/aether/internal/config"
-	"github.com/wambozi/aether/internal/event"
-	"github.com/wambozi/aether/internal/store"
+	"github.com/wambozi/sigil/internal/config"
+	"github.com/wambozi/sigil/internal/event"
+	"github.com/wambozi/sigil/internal/store"
 )
 
 // FleetReport is the anonymized aggregate payload sent to the Fleet Aggregation Layer.
@@ -385,14 +385,14 @@ func (r *Reporter) postReport(ctx context.Context, report FleetReport) error {
 }
 
 // loadOrCreateNodeID reads or generates a stable anonymous node ID.
-// The ID is persisted to ~/.local/share/aetherd/node_id.
+// The ID is persisted to ~/.local/share/sigild/node_id.
 func loadOrCreateNodeID(log *slog.Logger) string {
 	base := os.Getenv("XDG_DATA_HOME")
 	if base == "" {
 		h, _ := os.UserHomeDir()
 		base = filepath.Join(h, ".local", "share")
 	}
-	dir := filepath.Join(base, "aetherd")
+	dir := filepath.Join(base, "sigild")
 	path := filepath.Join(dir, "node_id")
 
 	data, err := os.ReadFile(path)

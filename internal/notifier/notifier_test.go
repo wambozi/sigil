@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wambozi/aether/internal/store"
+	"github.com/wambozi/sigil/internal/store"
 )
 
 // openTestStore creates a SQLite store in a temp dir for testing.

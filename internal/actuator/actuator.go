@@ -1,4 +1,4 @@
-// Package actuator provides the active actuation layer for aetherd.
+// Package actuator provides the active actuation layer for sigild.
 // Actuators observe system state and emit reversible Actions that reshape
 // the developer environment.
 package actuator

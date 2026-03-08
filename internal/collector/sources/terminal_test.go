@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wambozi/aether/internal/event"
+	"github.com/wambozi/sigil/internal/event"
 )
 
 func makeTerminalEvent(cmd string) event.Event {

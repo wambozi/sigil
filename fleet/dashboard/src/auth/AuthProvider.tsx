@@ -31,7 +31,7 @@ interface Props {
 
 export function AuthProvider({ children }: Props) {
   const [user, setUser] = useState<AuthUser | null>(() => {
-    const stored = localStorage.getItem("aether_fleet_token");
+    const stored = localStorage.getItem("sigil_fleet_token");
     if (stored) {
       try {
         const parsed = JSON.parse(stored);
@@ -54,13 +54,13 @@ export function AuthProvider({ children }: Props) {
       token,
     };
     setUser(authUser);
-    localStorage.setItem("aether_fleet_token", JSON.stringify(authUser));
+    localStorage.setItem("sigil_fleet_token", JSON.stringify(authUser));
   }, []);
 
   const logout = useCallback(() => {
     setUser(null);
     setAuthToken("");
-    localStorage.removeItem("aether_fleet_token");
+    localStorage.removeItem("sigil_fleet_token");
   }, []);
 
   return (

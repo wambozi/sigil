@@ -13,10 +13,10 @@ and explains how to manually verify each one.
 
 **How to verify:**
 ```bash
-systemctl --user status aetherd
+systemctl --user status sigild
 # Check uptime in Active: line
 
-aetherctl status
+sigilctl status
 # rss_mb should remain < 50 over 48h
 ```
 
@@ -26,11 +26,11 @@ aetherctl status
 
 ### [x] RSS stays under 50MB during normal operation
 
-**Status:** Implemented via RSS self-monitor (`runRSSMonitor` in `cmd/aetherd/main.go`).
+**Status:** Implemented via RSS self-monitor (`runRSSMonitor` in `cmd/sigild/main.go`).
 
 **How to verify:**
 ```bash
-aetherctl status | grep rss_mb
+sigilctl status | grep rss_mb
 # Should report < 50
 ```
 
@@ -45,11 +45,11 @@ target is a product goal, not a hard limit — the monitor enforces 100/150MB.
 
 **How to verify:**
 ```bash
-# Start aetherd with a local Cactus endpoint
-aetherd -cactus-url http://127.0.0.1:8080 -cactus-route local -log-level debug
+# Start sigild with a local Cactus endpoint
+sigild -cactus-url http://127.0.0.1:8080 -cactus-route local -log-level debug
 
 # Trigger an analysis cycle
-aetherctl summary
+sigilctl summary
 
 # Check logs for:
 # "analyzer: starting cycle"
@@ -65,32 +65,32 @@ routing hint `remote` or `remotefirst`.
 
 **How to verify:**
 ```bash
-aetherd -cactus-route remote -log-level debug
-aetherctl summary
+sigild -cactus-route remote -log-level debug
+sigilctl summary
 # Check logs for routing = "cloud"
 ```
 
 ---
 
-### [x] All 10+ aetherctl commands return correct responses via socket
+### [x] All 10+ sigilctl commands return correct responses via socket
 
 **Status:** All commands implemented and registered.
 
 **How to verify:**
 ```bash
-aetherctl status
-aetherctl events -n 5
-aetherctl files
-aetherctl commands
-aetherctl patterns
-aetherctl suggestions
-aetherctl summary
-aetherctl level
-aetherctl level 2
-aetherctl feedback 1 accept   # (requires a suggestion to exist)
-aetherctl config
-aetherctl export > /tmp/export.jsonl && wc -l /tmp/export.jsonl
-aetherctl tail &              # Ctrl-C after a few seconds
+sigilctl status
+sigilctl events -n 5
+sigilctl files
+sigilctl commands
+sigilctl patterns
+sigilctl suggestions
+sigilctl summary
+sigilctl level
+sigilctl level 2
+sigilctl feedback 1 accept   # (requires a suggestion to exist)
+sigilctl config
+sigilctl export > /tmp/export.jsonl && wc -l /tmp/export.jsonl
+sigilctl tail &              # Ctrl-C after a few seconds
 ```
 
 Each command should print tabwriter-formatted output or a JSON payload without
@@ -98,20 +98,20 @@ error.
 
 ---
 
-### [x] Shell hook: commands appear in `aetherctl events` within 1 second
+### [x] Shell hook: commands appear in `sigilctl events` within 1 second
 
-**Status:** Implemented via `aetherd init` shell hook installation.
+**Status:** Implemented via `sigild init` shell hook installation.
 
 **How to verify:**
 ```bash
-# After running aetherd init and sourcing your rc file:
-echo "test command" | nc -U /run/user/$(id -u)/aetherd.sock   # manual ingest
-aetherctl events -n 1
+# After running sigild init and sourcing your rc file:
+echo "test command" | nc -U /run/user/$(id -u)/sigild.sock   # manual ingest
+sigilctl events -n 1
 # The event should appear immediately
 ```
 
 Or simply run any shell command (ls, cd, git status) and check
-`aetherctl events -n 3` — the terminal event should appear within 1 second.
+`sigilctl events -n 3` — the terminal event should appear within 1 second.
 
 ---
 
@@ -141,9 +141,9 @@ All Phase 1 issues have been implemented and closed:
 | #15 | Daily digest scheduler | Closed |
 | #16 | macOS notification backend | Closed |
 | #8  | systemd user service file | Closed |
-| #9  | aetherd init subcommand | Closed |
-| #14 | aetherctl config command | Closed |
-| #21 | aetherctl purge and export | Closed |
+| #9  | sigild init subcommand | Closed |
+| #14 | sigilctl config command | Closed |
+| #21 | sigilctl purge and export | Closed |
 | #18 | GitHub Actions release workflow | Closed |
 | #17 | scripts/install.sh installer | Closed |
 | #19 | PRIVACY.md | Closed |

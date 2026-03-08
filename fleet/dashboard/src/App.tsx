@@ -19,7 +19,7 @@ function Dashboard() {
   return (
     <div>
       <header>
-        <h1>Aether Fleet Dashboard</h1>
+        <h1>Sigil Fleet Dashboard</h1>
         <nav>
           <button onClick={() => setView("adoption")} class={view === "adoption" ? "active" : ""}>
             Adoption

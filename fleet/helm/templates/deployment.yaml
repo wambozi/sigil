@@ -3,16 +3,16 @@ kind: Deployment
 metadata:
   name: {{ .Release.Name }}-fleet
   labels:
-    app: aether-fleet
+    app: sigil-fleet
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      app: aether-fleet
+      app: sigil-fleet
   template:
     metadata:
       labels:
-        app: aether-fleet
+        app: sigil-fleet
     spec:
       containers:
         - name: fleet

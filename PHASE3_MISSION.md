@@ -3,10 +3,10 @@
 The daemon gets smart, the shell gets refined, and the feedback loop closes.
 
 **Repos involved:**
-- `wambozi/aether` — Go daemon (`aetherd`, `aetherctl`); local path `../aether/` or `/home/nick/workspace/aether/`
-- `wambozi/aether-os` — Tauri shell + NixOS config; local path `../aether-os/` or `/home/nick/workspace/aether-os/`
+- `wambozi/sigil` — Go daemon (`sigild`, `sigilctl`); local path `../sigil/` or `/home/nick/workspace/sigil/`
+- `wambozi/sigil-os` — Tauri shell + NixOS config; local path `../sigil-os/` or `/home/nick/workspace/sigil-os/`
 
-**All GitHub issues live on `wambozi/aether`.** Shell/OS work that happens in `wambozi/aether-os` still closes issues on `wambozi/aether`.
+**All GitHub issues live on `wambozi/sigil`.** Shell/OS work that happens in `wambozi/sigil-os` still closes issues on `wambozi/sigil`.
 
 ---
 
@@ -26,20 +26,20 @@ The daemon gets smart, the shell gets refined, and the feedback loop closes.
 
 ## Build & Verify Commands
 
-### Daemon (`/home/nick/workspace/aether/`)
+### Daemon (`/home/nick/workspace/sigil/`)
 ```bash
 go build ./...
 go vet ./...
 go test ./...
 ```
 
-### Shell frontend (`/home/nick/workspace/aether-os/shell/`)
+### Shell frontend (`/home/nick/workspace/sigil-os/shell/`)
 ```bash
 npm run build
 ```
 (TypeScript must compile with zero type errors.)
 
-### Shell Rust backend (`/home/nick/workspace/aether-os/shell/src-tauri/`)
+### Shell Rust backend (`/home/nick/workspace/sigil-os/shell/src-tauri/`)
 ```bash
 cargo build
 ```
@@ -52,10 +52,10 @@ After each successful build + commit, close the issue:
 
 ```bash
 # Close with gh CLI (preferred)
-gh issue close <NUMBER> --repo wambozi/aether --comment "Implemented. See commit $(git -C /home/nick/workspace/aether rev-parse --short HEAD 2>/dev/null || git -C /home/nick/workspace/aether-os rev-parse --short HEAD)."
+gh issue close <NUMBER> --repo wambozi/sigil --comment "Implemented. See commit $(git -C /home/nick/workspace/sigil rev-parse --short HEAD 2>/dev/null || git -C /home/nick/workspace/sigil-os rev-parse --short HEAD)."
 
-# If closing from aether-os repo, reference commit from that repo:
-gh issue close <NUMBER> --repo wambozi/aether --comment "Implemented in wambozi/aether-os. See commit $(git -C /home/nick/workspace/aether-os rev-parse --short HEAD)."
+# If closing from sigil-os repo, reference commit from that repo:
+gh issue close <NUMBER> --repo wambozi/sigil --comment "Implemented in wambozi/sigil-os. See commit $(git -C /home/nick/workspace/sigil-os rev-parse --short HEAD)."
 ```
 
 ---
@@ -66,7 +66,7 @@ Issues 38–50 are duplicates of 103–115 (same titles, same work). Close them 
 
 ```bash
 for N in 38 39 40 41 42 43 44 45 46 47 48 49 50; do
-  gh issue close $N --repo wambozi/aether --comment "Duplicate of the corresponding issue in the 103–115 range. Closing as duplicate."
+  gh issue close $N --repo wambozi/sigil --comment "Duplicate of the corresponding issue in the 103–115 range. Closing as duplicate."
 done
 ```
 
@@ -80,7 +80,7 @@ Implement issues in this exact order.
 
 ### Issue #103 — Enhanced local heuristic model (temporal analysis, AI interaction patterns)
 
-**Repo:** `wambozi/aether`
+**Repo:** `wambozi/sigil`
 
 **Read first:**
 - `internal/analyzer/patterns.go` — existing 5 detectors; understand the `Detector.Detect()` pattern
@@ -128,7 +128,7 @@ Add table-driven tests for each new check in `internal/analyzer/patterns_test.go
 
 ### Issue #104 — LLM prompt enrichment with local pattern context
 
-**Repo:** `wambozi/aether`
+**Repo:** `wambozi/sigil`
 
 **Read first:**
 - `internal/analyzer/analyzer.go` — `buildPrompt()` and `localPass()`
@@ -182,11 +182,11 @@ Token guard: if the assembled prompt exceeds 7500 characters, truncate the patte
 
 ### Issue #105 — Passive actuations: suggestion bar integration with confidence gating
 
-**Repos:** `wambozi/aether` (daemon) and `wambozi/aether-os` (shell)
+**Repos:** `wambozi/sigil` (daemon) and `wambozi/sigil-os` (shell)
 
 **Read first:**
 - `internal/notifier/notifier.go` — `Surface()`, `Suggestion` type
-- `cmd/aetherd/main.go` — the `OnSummary` wrapping that currently fans out to socket subscribers (lines ~228–241)
+- `cmd/sigild/main.go` — the `OnSummary` wrapping that currently fans out to socket subscribers (lines ~228–241)
 - `shell/src/components/SuggestionBar.tsx` — existing implementation
 - `shell/src-tauri/src/daemon_client.rs` — existing `subscribe_suggestions` function
 
@@ -194,9 +194,9 @@ Token guard: if the assembled prompt exceeds 7500 characters, truncate the patte
 - Pattern suggestions with confidence >= 0.6 surface in the suggestion bar (not just desktop notifications)
 - Suggestion bar shows action hint when `ActionCmd` is set
 - Tab on suggestion bar triggers the action (calls daemon feedback + executes ActionCmd in the active PTY)
-- Suggestion bar history viewable via `aetherctl suggestions`
+- Suggestion bar history viewable via `sigilctl suggestions`
 
-**Daemon changes (`wambozi/aether`):**
+**Daemon changes (`wambozi/sigil`):**
 
 *`internal/notifier/notifier.go`* — add a push callback:
 
@@ -212,7 +212,7 @@ type Notifier struct {
 
 In `Surface()`, after `InsertSuggestion` succeeds and the confidence threshold passes (i.e., `sg.Confidence >= ConfidenceModerate`), call `n.OnSuggestion(id, sg)` if non-nil. Do this before the level switch so it fires regardless of notification level.
 
-*`cmd/aetherd/main.go`* — replace the existing OnSummary fan-out block (~line 228) with a proper OnSuggestion hook on the notifier that includes the real store ID and action_cmd:
+*`cmd/sigild/main.go`* — replace the existing OnSummary fan-out block (~line 228) with a proper OnSuggestion hook on the notifier that includes the real store ID and action_cmd:
 
 ```go
 ntf.OnSuggestion = func(id int64, sg notifier.Suggestion) {
@@ -229,7 +229,7 @@ ntf.OnSuggestion = func(id int64, sg notifier.Suggestion) {
 
 Remove the wrapping of `anlz.OnSummary` that manually called `srv.Notify("suggestions", ...)` — it produced synthetic IDs and is now superseded.
 
-**Shell changes (`wambozi/aether-os`):**
+**Shell changes (`wambozi/sigil-os`):**
 
 *`shell/src/components/SuggestionBar.tsx`* — update the `Suggestion` interface and rendering:
 
@@ -245,9 +245,9 @@ interface Suggestion {
 
 - When `action_cmd` is non-empty, append `• Tab to execute` to the hints.
 - Tab handler: if `action_cmd` is set, after calling `daemon_feedback`, emit a Tauri event `execute-action` with payload `{ cmd: current.action_cmd }` so the active PTY can receive it.
-- Add `aetherctl suggestions` link text at bottom right: a small `<button>` labeled "history" that, on click, executes `aetherctl suggestions` in the terminal PTY (emit `execute-action` with `cmd: "aetherctl suggestions"`).
+- Add `sigilctl suggestions` link text at bottom right: a small `<button>` labeled "history" that, on click, executes `sigilctl suggestions` in the terminal PTY (emit `execute-action` with `cmd: "sigilctl suggestions"`).
 
-**Commit strategy:** two commits — one in `wambozi/aether`, one in `wambozi/aether-os` — both with `closes #105`.
+**Commit strategy:** two commits — one in `wambozi/sigil`, one in `wambozi/sigil-os` — both with `closes #105`.
 
 **Build (daemon):** `go build ./... && go vet ./... && go test ./internal/notifier/`
 **Build (shell):** `npm run build` from `shell/` + `cargo build` from `shell/src-tauri/`
@@ -256,7 +256,7 @@ interface Suggestion {
 
 ### Issue #111 — Split-pane support (Cmd+backslash, horizontal and vertical)
 
-**Repo:** `wambozi/aether-os`
+**Repo:** `wambozi/sigil-os`
 
 **Read first:**
 - `shell/src/components/ContentPane.tsx` — existing layout and keep-alive pattern
@@ -317,7 +317,7 @@ Default split: `{ mode: 'none', primaryView: 'terminal', secondaryView: 'editor'
 
 ### Actuator Infrastructure (no issue — prereq for #106–#108)
 
-**Repo:** `wambozi/aether`
+**Repo:** `wambozi/sigil`
 
 **Commit message:** `feat: actuator package infrastructure (prereq for #106-#108)`
 
@@ -395,7 +395,7 @@ Note: to avoid an import cycle (`store` importing `actuator`), define a `StoreAc
 
 ### Issue #106 — Active actuation: auto-split pane when build starts
 
-**Repos:** `wambozi/aether` (daemon) and `wambozi/aether-os` (shell)
+**Repos:** `wambozi/sigil` (daemon) and `wambozi/sigil-os` (shell)
 
 **Read first:**
 - `internal/actuator/actuator.go` and `registry.go` — just built
@@ -403,7 +403,7 @@ Note: to avoid an import cycle (`store` importing `actuator`), define a `StoreAc
 - `internal/analyzer/patterns.go` — `isTestOrBuildCmd` helper
 - `shell/src/components/ContentPane.tsx` — split state implementation from #111
 - `shell/src-tauri/src/daemon_client.rs` — existing subscribe_suggestions as model
-- `cmd/aetherd/main.go` — how collector.Broadcast is available (check the collector.New call)
+- `cmd/sigild/main.go` — how collector.Broadcast is available (check the collector.New call)
 
 **Acceptance criteria (from issue):**
 - Daemon detects build/test command start via terminal event
@@ -412,7 +412,7 @@ Note: to avoid an import cycle (`store` importing `actuator`), define a `StoreAc
 - Auto-closes the split when the build completes (success or failure)
 - User can opt out per-session via setting
 
-**Daemon changes (`wambozi/aether`):**
+**Daemon changes (`wambozi/sigil`):**
 
 *`internal/actuator/build_split.go`* — `BuildSplitActuator`:
 
@@ -460,7 +460,7 @@ actuatorNotify := func(a actuator.Action) {
 }
 ```
 
-**Shell changes (`wambozi/aether-os`):**
+**Shell changes (`wambozi/sigil-os`):**
 
 *`shell/src-tauri/src/daemon_client.rs`* — add `subscribe_actuations()` function (parallel to `subscribe_suggestions`):
 - Same pattern: dedicated socket connection, subscribes to `"actuations"` topic, emits `daemon-actuation` Tauri events.
@@ -488,7 +488,7 @@ listen<ActuationPayload>('daemon-actuation', (event) => {
 
 ### Issue #107 — Active actuation: pre-warm idle Docker containers
 
-**Repo:** `wambozi/aether`
+**Repo:** `wambozi/sigil`
 
 **Read first:**
 - `internal/actuator/actuator.go` and `registry.go`
@@ -546,22 +546,22 @@ Add `ExecuteCmd string` to `internal/actuator/actuator.go`'s `Action` struct.
 
 ### Issue #108 — Active actuation: dynamic keybinding profiles
 
-**Repos:** `wambozi/aether` (daemon) and `wambozi/aether-os` (shell + nix)
+**Repos:** `wambozi/sigil` (daemon) and `wambozi/sigil-os` (shell + nix)
 
 **Read first:**
 - `internal/actuator/actuator.go` and `registry.go`
 - `internal/event/event.go` — `KindHyprland` events
 - `shell/src/context/AppContext.tsx` — `ViewId` (tool names)
-- `aether-os/modules/` directory (currently empty)
-- `aether-os/flake.nix` — current minimal structure
+- `sigil-os/modules/` directory (currently empty)
+- `sigil-os/flake.nix` — current minimal structure
 
 **Acceptance criteria (from issue):**
 - Daemon detects active tool (terminal, editor, browser, git)
 - Keybinding profile loaded from Nix flake config per tool
 - Profile switch is instant and non-disruptive
-- User can see current active profile via `aetherctl status`
+- User can see current active profile via `sigilctl status`
 
-**Daemon changes (`wambozi/aether`):**
+**Daemon changes (`wambozi/sigil`):**
 
 *`internal/actuator/keybinding.go`* — `KeybindingActuator`:
 
@@ -584,18 +584,18 @@ srv.Handle("view-changed", func(ctx context.Context, req socket.Request) socket.
 })
 ```
 
-Track current profile in `cmd/aetherd/main.go` via `atomic.Value` and expose it via the `status` handler: `"current_keybinding_profile": currentProfile.Load()`.
+Track current profile in `cmd/sigild/main.go` via `atomic.Value` and expose it via the `status` handler: `"current_keybinding_profile": currentProfile.Load()`.
 
-**NixOS config (`wambozi/aether-os`):**
+**NixOS config (`wambozi/sigil-os`):**
 
-*`modules/aether-keybindings.nix`* — new NixOS module defining keybinding profiles per tool as options:
+*`modules/sigil-keybindings.nix`* — new NixOS module defining keybinding profiles per tool as options:
 
 ```nix
 { config, lib, ... }:
 with lib;
 {
-  options.services.aether-shell.keybindings = {
-    enable = mkEnableOption "Aether Shell dynamic keybinding profiles";
+  options.services.sigil-shell.keybindings = {
+    enable = mkEnableOption "Sigil Shell dynamic keybinding profiles";
     profiles = mkOption {
       type = types.attrsOf (types.attrsOf types.str);
       default = {
@@ -610,7 +610,7 @@ with lib;
 }
 ```
 
-**Shell changes (`wambozi/aether-os`):**
+**Shell changes (`wambozi/sigil-os`):**
 
 *`shell/src/context/AppContext.tsx`* — when `setActiveView` is called, also call `invoke('daemon_view_changed', { view: newView })`.
 
@@ -625,23 +625,23 @@ Register in `main.rs`.
 
 ### Issue #109 — Undo system (Cmd+Z at shell level, reversible action log)
 
-**Repos:** `wambozi/aether` (daemon) and `wambozi/aether-os` (shell)
+**Repos:** `wambozi/sigil` (daemon) and `wambozi/sigil-os` (shell)
 
 **Read first:**
 - `internal/actuator/actuator.go` — `Action` type including `UndoCmd`
 - `internal/store/store.go` — `action_log` table and methods from the actuator infra step
-- `cmd/aetherd/main.go` — registered socket handlers
+- `cmd/sigild/main.go` — registered socket handlers
 
 **Acceptance criteria (from issue):**
 - All active actuations produce an `UndoEntry` in the daemon action log
 - `Ctrl+Z` in the shell sends an undo request to the daemon
 - Daemon executes the undo command (from `Action.UndoCmd`)
 - Undo is available for 30 seconds after the action
-- `aetherctl` shows recent actions with undo status
+- `sigilctl` shows recent actions with undo status
 
-**Daemon changes (`wambozi/aether`):**
+**Daemon changes (`wambozi/sigil`):**
 
-*`cmd/aetherd/main.go`* — register `undo` and `actions` socket handlers:
+*`cmd/sigild/main.go`* — register `undo` and `actions` socket handlers:
 
 ```go
 srv.Handle("undo", func(ctx context.Context, _ socket.Request) socket.Response {
@@ -672,7 +672,7 @@ srv.Handle("actions", func(ctx context.Context, _ socket.Request) socket.Respons
 })
 ```
 
-**Shell changes (`wambozi/aether-os`):**
+**Shell changes (`wambozi/sigil-os`):**
 
 *`shell/src-tauri/src/daemon_client.rs`* — add `daemon_undo()` Tauri command that sends `{"method":"undo","payload":{}}`.
 
@@ -682,7 +682,7 @@ srv.Handle("actions", func(ctx context.Context, _ socket.Request) socket.Respons
 
 Register `daemon_undo` in `main.rs`.
 
-**aetherctl** — add `actions` subcommand to `cmd/aetherctl/main.go` that calls the `actions` socket method and prints recent undoable actions.
+**sigilctl** — add `actions` subcommand to `cmd/sigilctl/main.go` that calls the `actions` socket method and prints recent undoable actions.
 
 **Build (daemon):** `go build ./... && go vet ./... && go test ./internal/store/`
 **Build (shell):** `npm run build` + `cargo build`
@@ -691,12 +691,12 @@ Register `daemon_undo` in `main.rs`.
 
 ### Issue #110 — Progressive AI disclosure via suggestion bar
 
-**Repo:** `wambozi/aether`
+**Repo:** `wambozi/sigil`
 
 **Read first:**
 - `internal/analyzer/patterns.go` — existing detectors, including the new ones from #103
 - `internal/store/store.go` — `QueryAIInteractions`
-- `cmd/aetherd/main.go` — `anlz.OnSummary` hook
+- `cmd/sigild/main.go` — `anlz.OnSummary` hook
 
 **Acceptance criteria (from issue):**
 - Tier 0: only pattern-based suggestions, no AI mode prompts
@@ -738,7 +738,7 @@ Store the current tier in the `patterns` table (`kind = "ai_tier"`) so it persis
 
 ### Issue #112 — Pop-out tool to Hyprland window
 
-**Repo:** `wambozi/aether-os`
+**Repo:** `wambozi/sigil-os`
 
 **Read first:**
 - `shell/src-tauri/src/main.rs` — Tauri command registration
@@ -776,25 +776,25 @@ fn hyprland_dispatch(cmd: &str) -> Result<(), String> {
 
 /// Pops the current tool out into a new Hyprland floating window.
 /// For terminal/editor: spawns a new terminal with the current PTY's shell.
-/// For other tools: spawns a new aether-shell instance in that tool's view.
+/// For other tools: spawns a new sigil-shell instance in that tool's view.
 #[tauri::command]
 pub fn pop_out_tool(tool: String) -> Result<(), String> {
-    // Spawn the aether-shell process (or a dedicated terminal) and
+    // Spawn the sigil-shell process (or a dedicated terminal) and
     // apply Hyprland floating window rules.
     let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
     match tool.as_str() {
         "terminal" | "editor" => {
             // Open the user's terminal emulator for PTY tools.
-            hyprland_dispatch(&format!("exec kitty --class aether-popout {}", shell))?;
+            hyprland_dispatch(&format!("exec kitty --class sigil-popout {}", shell))?;
         }
         _ => {
             // For non-PTY tools, could open a minimal browser or git UI.
-            // For now, open a kitty window with aetherctl status.
-            hyprland_dispatch("exec kitty --class aether-popout aetherctl status")?;
+            // For now, open a kitty window with sigilctl status.
+            hyprland_dispatch("exec kitty --class sigil-popout sigilctl status")?;
         }
     }
     // Apply floating rule for the new window class.
-    hyprland_dispatch("exec hyprctl --batch 'keyword windowrulev2 float,class:aether-popout'")?;
+    hyprland_dispatch("exec hyprctl --batch 'keyword windowrulev2 float,class:sigil-popout'")?;
     Ok(())
 }
 ```
@@ -809,7 +809,7 @@ pub fn pop_out_tool(tool: String) -> Result<(), String> {
 
 ### Issue #113 — Command palette (Cmd+K)
 
-**Repo:** `wambozi/aether-os`
+**Repo:** `wambozi/sigil-os`
 
 **Read first:**
 - `shell/src/context/AppContext.tsx` — `ViewId`, app state
@@ -818,7 +818,7 @@ pub fn pop_out_tool(tool: String) -> Result<(), String> {
 
 **Acceptance criteria (from issue):**
 - `Ctrl+K` opens palette overlay
-- Searchable list: tool switch, aetherctl commands, recent files, recent commands, daemon actions
+- Searchable list: tool switch, sigilctl commands, recent files, recent commands, daemon actions
 - Fuzzy search with ranked results
 - Enter executes; Esc closes
 - Keyboard-navigable
@@ -840,7 +840,7 @@ interface PaletteItem {
 Static items (always present):
 - Tool switches: "Switch to Terminal", "Switch to Editor", etc. — call `setActiveView(view)`.
 - Daemon actions: "Trigger analysis", "Purge local data", "View suggestions" — call `invoke(...)`.
-- `aetherctl` subcommands: "aetherctl status", "aetherctl events", "aetherctl actions" — emit `execute-action` with the command string.
+- `sigilctl` subcommands: "sigilctl status", "sigilctl events", "sigilctl actions" — emit `execute-action` with the command string.
 
 Dynamic items (loaded on open):
 - Recent files from `daemon_files` (top 10) — execute in terminal: `nvim <path>` via PTY.
@@ -860,12 +860,12 @@ Rendering: full-screen overlay with a centered 600px-wide modal. Search input at
 
 ### Issue #114 — Theme customization via Nix flake
 
-**Repos:** `wambozi/aether-os` (nix module + shell CSS)
+**Repos:** `wambozi/sigil-os` (nix module + shell CSS)
 
 **Read first:**
 - `shell/src/styles/global.css` — all hardcoded color values
-- `aether-os/flake.nix` — current flake structure
-- `aether-os/modules/.gitkeep` — the modules directory
+- `sigil-os/flake.nix` — current flake structure
+- `sigil-os/modules/.gitkeep` — the modules directory
 
 **Acceptance criteria (from issue):**
 - Nix flake exposes a theme option: colors, font family, font size, border radius
@@ -894,7 +894,7 @@ Rendering: full-screen overlay with a centered 600px-wide modal. Search input at
 
 Replace every hardcoded `#0a0a0a`, `#e5e5e5`, `#6366f1`, `#222222`, `#111111` throughout `global.css` with the corresponding variable.
 
-*`shell/src-tauri/src/main.rs`* — on startup, check for a theme CSS file at `~/.config/aether-shell/theme.css`. If it exists, read it and inject it into the WebView via Tauri's `eval` after app launch:
+*`shell/src-tauri/src/main.rs`* — on startup, check for a theme CSS file at `~/.config/sigil-shell/theme.css`. If it exists, read it and inject it into the WebView via Tauri's `eval` after app launch:
 
 ```rust
 // In the setup closure or after run():
@@ -907,15 +907,15 @@ if let Ok(css) = std::fs::read_to_string(theme_path) {
 
 Use Tauri 2.x `WebviewWindow::eval` for script injection at startup.
 
-*`modules/aether-shell.nix`* — NixOS module:
+*`modules/sigil-shell.nix`* — NixOS module:
 
 ```nix
 { config, lib, pkgs, ... }:
 with lib;
-let cfg = config.services.aether-shell;
+let cfg = config.services.sigil-shell;
 in {
-  options.services.aether-shell = {
-    enable = mkEnableOption "Aether Shell";
+  options.services.sigil-shell = {
+    enable = mkEnableOption "Sigil Shell";
     theme = {
       background    = mkOption { type = types.str; default = "#0a0a0a"; };
       foreground    = mkOption { type = types.str; default = "#e5e5e5"; };
@@ -929,7 +929,7 @@ in {
   };
 
   config = mkIf cfg.enable {
-    home.file.".config/aether-shell/theme.css".text = ''
+    home.file.".config/sigil-shell/theme.css".text = ''
       :root {
         --color-bg:         ${cfg.theme.background};
         --color-fg:         ${cfg.theme.foreground};
@@ -948,7 +948,7 @@ in {
 Also add a `light` theme example in `modules/themes/light.nix`:
 
 ```nix
-# Example light theme — import into flake.nix and set services.aether-shell.theme.*
+# Example light theme — import into flake.nix and set services.sigil-shell.theme.*
 {
   background   = "#f5f5f5";
   foreground   = "#1a1a1a";
@@ -964,7 +964,7 @@ Also add a `light` theme example in `modules/themes/light.nix`:
 
 ### Issue #115 — Phase 3 exit criteria validation
 
-**Repo:** `wambozi/aether-os`
+**Repo:** `wambozi/sigil-os`
 
 Create `phases/phase_3_intelligence_polish.md` with the following content:
 
@@ -979,19 +979,19 @@ Create `phases/phase_3_intelligence_polish.md` with the following content:
       switch tool views — keybinding profile should update.
 
 - [ ] Suggestion acceptance rate above 60% (self-testing over 1 week)
-      Verification: `aetherctl suggestions` — check accepted/(accepted+dismissed) ratio.
+      Verification: `sigilctl suggestions` — check accepted/(accepted+dismissed) ratio.
 
 - [ ] Split-pane and pop-out to Hyprland window work reliably
       Verification: Ctrl+\ to split, Ctrl+Shift+O to pop out active tool.
 
-- [ ] Command palette covers all aetherctl commands and tool switches
-      Verification: Ctrl+K — verify all 6 tool switches and aetherctl subcommands appear.
+- [ ] Command palette covers all sigilctl commands and tool switches
+      Verification: Ctrl+K — verify all 6 tool switches and sigilctl subcommands appear.
 
 - [ ] One external developer has tested the full system and provided feedback
       Verification: written feedback documented in docs/external-tester-feedback.md
 
 - [ ] No regression in daemon memory (still under 50MB RSS)
-      Verification: `aetherctl status` — check rss_mb field after 48h uptime.
+      Verification: `sigilctl status` — check rss_mb field after 48h uptime.
 
 ## Implementation Notes
 
@@ -1009,13 +1009,13 @@ Close issues #115 and #50 (the duplicate).
 After all issues are closed, verify the phase milestone:
 
 ```bash
-gh api repos/wambozi/aether/milestones --jq '.[] | select(.title | contains("Phase 3")) | {title, open_issues}'
+gh api repos/wambozi/sigil/milestones --jq '.[] | select(.title | contains("Phase 3")) | {title, open_issues}'
 ```
 
 If `open_issues` is 1 (only the epic #4 remains), close it:
 
 ```bash
-gh issue close 4 --repo wambozi/aether --comment "Phase 3 complete. All implementation issues closed."
+gh issue close 4 --repo wambozi/sigil --comment "Phase 3 complete. All implementation issues closed."
 ```
 
 Phase 3 is done.

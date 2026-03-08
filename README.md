@@ -1,9 +1,9 @@
-# Aether OS
+# Sigil OS
 
-[![Build](https://github.com/wambozi/aether/actions/workflows/release.yml/badge.svg)](https://github.com/wambozi/aether/actions/workflows/release.yml)
-[![Tests](https://github.com/wambozi/aether/actions/workflows/ci.yml/badge.svg)](https://github.com/wambozi/aether/actions/workflows/ci.yml)
+[![Build](https://github.com/wambozi/sigil/actions/workflows/release.yml/badge.svg)](https://github.com/wambozi/sigil/actions/workflows/release.yml)
+[![Tests](https://github.com/wambozi/sigil/actions/workflows/ci.yml/badge.svg)](https://github.com/wambozi/sigil/actions/workflows/ci.yml)
 
-Aether is a self-tuning intelligence layer for professional software engineers.
+Sigil is a self-tuning intelligence layer for professional software engineers.
 It runs as a lightweight background daemon that observes your workflow — file
 edits, terminal commands, git activity, and process signals — builds a local
 model of your patterns entirely on-device, and surfaces actionable insights as
@@ -13,10 +13,10 @@ leaves your machine unless you opt in.
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/wambozi/aether/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/wambozi/sigil/main/scripts/install.sh | bash
 ```
 
-## aetherctl command reference
+## sigilctl command reference
 
 | Command | Description |
 |---------|-------------|
@@ -44,7 +44,7 @@ Sources → Collector → Store (SQLite)
                   ↓ local heuristics + Cactus LLM
               Notifier → notify-send / osascript
                   ↑
-              Socket server ← aetherctl / shell
+              Socket server ← sigilctl / shell
 ```
 
 **Event sources:** file system (fsnotify), process poll (/proc), git, terminal commands via shell hook.
@@ -55,7 +55,7 @@ Sources → Collector → Store (SQLite)
 
 ## Privacy
 
-All data is stored locally in `~/.local/share/aetherd/data.db`. Nothing leaves
+All data is stored locally in `~/.local/share/sigild/data.db`. Nothing leaves
 your machine unless you configure a remote Cactus endpoint.
 
 See [PRIVACY.md](PRIVACY.md) for the full data inventory and opt-out instructions.

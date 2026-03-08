@@ -3,7 +3,7 @@ kind: Service
 metadata:
   name: {{ .Release.Name }}-fleet
   labels:
-    app: aether-fleet
+    app: sigil-fleet
 spec:
   type: {{ .Values.service.type }}
   ports:
@@ -12,4 +12,4 @@ spec:
       protocol: TCP
       name: http
   selector:
-    app: aether-fleet
+    app: sigil-fleet

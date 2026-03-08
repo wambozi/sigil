@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wambozi/aether/internal/event"
+	"github.com/wambozi/sigil/internal/event"
 )
 
 // TerminalQuerier is the subset of the store needed to query terminal events.

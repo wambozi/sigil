@@ -1,16 +1,16 @@
 { config, lib, pkgs, ... }:
 
 let
-  cfg = config.services.aether-fleet;
+  cfg = config.services.sigil-fleet;
 in
 {
-  options.services.aether-fleet = {
-    enable = lib.mkEnableOption "Aether Fleet Aggregation Layer";
+  options.services.sigil-fleet = {
+    enable = lib.mkEnableOption "Sigil Fleet Aggregation Layer";
 
     package = lib.mkOption {
       type = lib.types.package;
       default = pkgs.callPackage ./package.nix { };
-      description = "The aether-fleet package to use.";
+      description = "The sigil-fleet package to use.";
     };
 
     listenAddr = lib.mkOption {
@@ -21,7 +21,7 @@ in
 
     dbURL = lib.mkOption {
       type = lib.types.str;
-      default = "postgres://aether@localhost:5432/aether_fleet?sslmode=disable";
+      default = "postgres://sigil@localhost:5432/sigil_fleet?sslmode=disable";
       description = "PostgreSQL connection string.";
     };
 
@@ -55,16 +55,16 @@ in
       };
       adminGroup = lib.mkOption {
         type = lib.types.str;
-        default = "aether-admins";
+        default = "sigil-admins";
         description = "OIDC group claim for admin access.";
       };
     };
 
     postgresql = {
-      enable = lib.mkEnableOption "local PostgreSQL for Aether Fleet";
+      enable = lib.mkEnableOption "local PostgreSQL for Sigil Fleet";
       database = lib.mkOption {
         type = lib.types.str;
-        default = "aether_fleet";
+        default = "sigil_fleet";
         description = "PostgreSQL database name.";
       };
     };
@@ -76,14 +76,14 @@ in
       ensureDatabases = [ cfg.postgresql.database ];
       ensureUsers = [
         {
-          name = "aether";
+          name = "sigil";
           ensureDBOwnership = true;
         }
       ];
     };
 
-    systemd.services.aether-fleet = {
-      description = "Aether Fleet Aggregation Layer";
+    systemd.services.sigil-fleet = {
+      description = "Sigil Fleet Aggregation Layer";
       after = [ "network.target" ] ++ lib.optional cfg.postgresql.enable "postgresql.service";
       wants = lib.optional cfg.postgresql.enable "postgresql.service";
       wantedBy = [ "multi-user.target" ];

@@ -46,7 +46,7 @@ func TestComplete_happyPath(t *testing.T) {
 	defer ts.Close()
 
 	c := New(ts.URL, "test-model", RouteLocal)
-	result, err := c.Complete(context.Background(), "you are aetherd", "summarise activity")
+	result, err := c.Complete(context.Background(), "you are sigild", "summarise activity")
 	if err != nil {
 		t.Fatalf("Complete: %v", err)
 	}

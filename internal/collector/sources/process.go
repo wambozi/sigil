@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wambozi/aether/internal/event"
+	"github.com/wambozi/sigil/internal/event"
 )
 
 // ProcessSource polls /proc on a fixed interval and emits an event whenever a

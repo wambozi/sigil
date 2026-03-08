@@ -1,4 +1,4 @@
-// Package config loads and merges aetherd's file-based TOML configuration.
+// Package config loads and merges sigild's file-based TOML configuration.
 // File values are defaults; CLI flags passed by the caller always win.
 package config
 
@@ -12,7 +12,7 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
-// Config holds every tunable parameter for aetherd.
+// Config holds every tunable parameter for sigild.
 // Zero values mean "use the built-in default" so callers can detect which
 // fields were actually set by the file.
 type Config struct {
@@ -96,7 +96,7 @@ func DefaultPath() string {
 		h, _ := os.UserHomeDir()
 		base = filepath.Join(h, ".config")
 	}
-	return filepath.Join(base, "aether", "config.toml")
+	return filepath.Join(base, "sigil", "config.toml")
 }
 
 // Load reads the TOML file at path and merges it on top of built-in defaults.

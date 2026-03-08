@@ -1,13 +1,13 @@
 # Privacy Policy
 
-Aether OS is designed to stay on your machine. This document explains exactly
+Sigil OS is designed to stay on your machine. This document explains exactly
 what data is collected, where it lives, and how to delete it.
 
 ---
 
 ## What IS collected
 
-Aether observes your workflow at the metadata level — never the content:
+Sigil observes your workflow at the metadata level — never the content:
 
 | Signal | What is recorded |
 |--------|-----------------|
@@ -22,7 +22,7 @@ All records include a timestamp and are stored in a local SQLite database.
 
 ## What is NOT collected
 
-- **File contents** — Aether never reads or stores the text inside your files
+- **File contents** — Sigil never reads or stores the text inside your files
 - **Keystrokes** — No keystroke logger is present
 - **Screen capture** — No screenshots or screen recordings
 - **Clipboard** — The clipboard is never accessed
@@ -36,14 +36,14 @@ All records include a timestamp and are stored in a local SQLite database.
 All collected data is stored locally in a SQLite database:
 
 ```
-~/.local/share/aetherd/data.db
+~/.local/share/sigild/data.db
 ```
 
-(`$XDG_DATA_HOME/aetherd/data.db` if `XDG_DATA_HOME` is set.)
+(`$XDG_DATA_HOME/sigild/data.db` if `XDG_DATA_HOME` is set.)
 
 **Nothing leaves your machine unless you explicitly enable cloud inference.**
 Raw event data is pruned after 90 days (configurable via `raw_event_days` in
-`~/.config/aether/config.toml`).
+`~/.config/sigil/config.toml`).
 
 ---
 
@@ -73,7 +73,7 @@ routing_mode = "local"
 ## How to delete all data
 
 ```bash
-aetherctl purge
+sigilctl purge
 ```
 
 This will prompt for confirmation, delete every row from every table, and
@@ -86,10 +86,10 @@ on next startup if it is still running.
 
 ```bash
 # List the most recent events
-aetherctl events --all
+sigilctl events --all
 
 # Export everything as newline-delimited JSON
-aetherctl export > my_data.jsonl
+sigilctl export > my_data.jsonl
 ```
 
 The export format is human-readable JSON — one record per line — so you can
@@ -111,7 +111,7 @@ Local events (file paths, cmds, git)
   LLM narrative → stored locally → shown as notification
 ```
 
-The Cactus endpoint is configured at `~/.config/aether/config.toml`. By
+The Cactus endpoint is configured at `~/.config/sigil/config.toml`. By
 default it points to `http://127.0.0.1:8080` (local). If you change the URL
 to a remote endpoint, only the aggregated summary described above is sent.
 
@@ -119,4 +119,4 @@ to a remote endpoint, only the aggregated summary described above is sent.
 
 ## Questions or concerns
 
-Open an issue at <https://github.com/wambozi/aether/issues>.
+Open an issue at <https://github.com/wambozi/sigil/issues>.

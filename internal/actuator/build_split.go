@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/wambozi/aether/internal/event"
+	"github.com/wambozi/sigil/internal/event"
 )
 
 // BuildSplitActuator watches the collector Broadcast channel for build/test

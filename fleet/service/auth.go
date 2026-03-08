@@ -39,7 +39,7 @@ func loadAuthConfig() *AuthConfig {
 		Issuer:       issuer,
 		ClientID:     envOr("FLEET_OIDC_CLIENT_ID", ""),
 		ClientSecret: envOr("FLEET_OIDC_CLIENT_SECRET", ""),
-		AdminGroup:   envOr("FLEET_OIDC_ADMIN_GROUP", "aether-admins"),
+		AdminGroup:   envOr("FLEET_OIDC_ADMIN_GROUP", "sigil-admins"),
 	}
 }
 

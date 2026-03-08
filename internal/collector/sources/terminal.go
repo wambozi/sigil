@@ -3,7 +3,7 @@ package sources
 import (
 	"context"
 
-	"github.com/wambozi/aether/internal/event"
+	"github.com/wambozi/sigil/internal/event"
 )
 
 // TerminalSource receives shell command events pushed from the socket "ingest"

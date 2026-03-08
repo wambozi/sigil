@@ -4,12 +4,12 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 ## Build & Run
 
-All Go commands run from the **repo root** (`/c/Users/nick/workspace/aether/` on Windows, or the repo root on Linux):
+All Go commands run from the **repo root** (`/c/Users/nick/workspace/sigil/` on Windows, or the repo root on Linux):
 
 ```bash
 # Build both binaries
-go build ./cmd/aetherd/
-go build ./cmd/aetherctl/
+go build ./cmd/sigild/
+go build ./cmd/sigilctl/
 
 # Verify no issues
 go vet ./...
@@ -18,17 +18,17 @@ go vet ./...
 go test ./...
 
 # Run the daemon (Linux only — uses Unix sockets, /proc, inotify)
-./aetherd \
+./sigild \
   -watch /home/user/code \
   -repos /home/user/code/myproject \
   -cactus-url http://127.0.0.1:8080 \
   -log-level debug
 
 # Run the CLI
-./aetherctl status
-./aetherctl events -n 50
-./aetherctl tail
-./aetherctl events -offline   # read SQLite directly without daemon
+./sigilctl status
+./sigilctl events -n 50
+./sigilctl tail
+./sigilctl events -offline   # read SQLite directly without daemon
 ```
 
 ## Testing
@@ -45,7 +45,7 @@ go test -run TestServerHandleStatus ./internal/socket/
 
 ## Architecture
 
-`aetherd` is a Linux daemon that observes developer workflow via four sources, persists everything to a local SQLite database, and surfaces AI-generated insights as desktop notifications.
+`sigild` is a Linux daemon that observes developer workflow via four sources, persists everything to a local SQLite database, and surfaces AI-generated insights as desktop notifications.
 
 **Event flow:**
 
@@ -56,7 +56,7 @@ Sources → Collector → Store (SQLite)
                   ↓ local heuristics + Cactus LLM
               Notifier → notify-send
                   ↑
-              Socket server ← aetherctl / shell
+              Socket server ← sigilctl / shell
 ```
 
 **Key packages:**
@@ -84,8 +84,8 @@ Registered methods: `status`, `events`, `suggestions`, `set-level`, `ingest`, `f
 ## Platform Notes
 
 - Daemon targets Linux primarily — `platform_linux.go` uses `notify-send`; `platform_darwin.go` uses osascript; `platform_other.go` is a no-op stub
-- SQLite DB: `~/.local/share/aetherd/data.db` (XDG_DATA_HOME respected)
-- Socket: `/run/user/$UID/aetherd.sock` (XDG_RUNTIME_DIR respected)
+- SQLite DB: `~/.local/share/sigild/data.db` (XDG_DATA_HOME respected)
+- Socket: `/run/user/$UID/sigild.sock` (XDG_RUNTIME_DIR respected)
 - Raw events pruned after 90 days; `patterns` table kept forever
 
 ## Dependency Graph (no cycles allowed)
@@ -94,7 +94,7 @@ Registered methods: `status`, `events`, `suggestions`, `set-level`, `ingest`, `f
 event ← store, collector/sources, collector, analyzer
 cactus ← analyzer
 socket ← standalone (stdlib only)
-cmd/aetherd ← everything
+cmd/sigild ← everything
 ```
 
 Adding a new package must not introduce cycles — `event` is the leaf shared by all layers.
@@ -110,12 +110,12 @@ To close an issue after implementation:
 ```bash
 # Comment + close
 ISSUE=<number>
-curl -s -X POST "https://api.github.com/repos/wambozi/aether/issues/${ISSUE}/comments" \
+curl -s -X POST "https://api.github.com/repos/wambozi/sigil/issues/${ISSUE}/comments" \
   -H "Authorization: token $GITHUB_TOKEN" \
   -H "Accept: application/vnd.github.v3+json" \
   -d "{\"body\": \"Implemented. See commit $(git rev-parse --short HEAD).\"}"
 
-curl -s -X PATCH "https://api.github.com/repos/wambozi/aether/issues/${ISSUE}" \
+curl -s -X PATCH "https://api.github.com/repos/wambozi/sigil/issues/${ISSUE}" \
   -H "Authorization: token $GITHUB_TOKEN" \
   -H "Accept: application/vnd.github.v3+json" \
   -d '{"state": "closed", "state_reason": "completed"}'
@@ -139,9 +139,9 @@ After each issue: verify `go build ./...` and `go vet ./...` pass, commit, close
 | #15 | Daily digest scheduler | config (#13) |
 | #16 | macOS notification backend + build tags | none |
 | #8 | systemd user service file | none |
-| #9 | aetherd init subcommand | #8, #13 |
-| #14 | aetherctl config command | #13 |
-| #21 | aetherctl purge and export | store |
+| #9 | sigild init subcommand | #8, #13 |
+| #14 | sigilctl config command | #13 |
+| #21 | sigilctl purge and export | store |
 | #18 | GitHub Actions release workflow | none |
 | #17 | scripts/install.sh one-line installer | #18 |
 | #19 | PRIVACY.md | none |

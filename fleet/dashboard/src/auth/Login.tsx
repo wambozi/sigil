@@ -17,7 +17,7 @@ export function Login() {
 
   return (
     <div class="login">
-      <h2>Aether Fleet Dashboard</h2>
+      <h2>Sigil Fleet Dashboard</h2>
       <p>Enter your access token or use SSO to sign in.</p>
       <form onSubmit={handleSubmit}>
         <input
