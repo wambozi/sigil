@@ -83,6 +83,8 @@ func run() error {
 		return cmdPurge(*dbPath)
 	case "export":
 		return cmdExport(*dbPath)
+	case "fleet":
+		return cmdFleet(*socketPath, args)
 	default:
 		return fmt.Errorf("unknown command %q — run aetherctl -help", cmd)
 	}
@@ -577,6 +579,71 @@ func cmdExport(dbPath string) error {
 	return db.Export(os.Stdout)
 }
 
+// cmdFleet handles fleet subcommands: status, preview, opt-out.
+func cmdFleet(socketPath string, args []string) error {
+	if len(args) == 0 {
+		fmt.Println("Usage: aetherctl fleet <status|preview|opt-out>")
+		return nil
+	}
+	switch args[0] {
+	case "status":
+		return cmdFleetStatus(socketPath)
+	case "preview":
+		return cmdFleetPreview(socketPath)
+	case "opt-out":
+		return cmdFleetOptOut(socketPath)
+	default:
+		return fmt.Errorf("unknown fleet command %q — use status, preview, or opt-out", args[0])
+	}
+}
+
+func cmdFleetStatus(socketPath string) error {
+	resp, err := call(socketPath, "fleet-preview", nil)
+	if err != nil {
+		return err
+	}
+	if !resp.OK {
+		fmt.Println("Fleet reporting: disabled")
+		return nil
+	}
+	fmt.Println("Fleet reporting: enabled")
+	var report map[string]any
+	_ = json.Unmarshal(resp.Payload, &report)
+	fmt.Printf("  Node ID: %v\n", report["node_id"])
+	fmt.Printf("  Adoption tier: %v\n", report["adoption_tier"])
+	fmt.Printf("  Total events: %v\n", report["total_events"])
+	return nil
+}
+
+func cmdFleetPreview(socketPath string) error {
+	resp, err := call(socketPath, "fleet-preview", nil)
+	if err != nil {
+		return err
+	}
+	if !resp.OK {
+		return fmt.Errorf("fleet preview: %s", resp.Error)
+	}
+	var pretty json.RawMessage
+	if err := json.Unmarshal(resp.Payload, &pretty); err != nil {
+		return err
+	}
+	out, _ := json.MarshalIndent(pretty, "", "  ")
+	fmt.Println(string(out))
+	return nil
+}
+
+func cmdFleetOptOut(socketPath string) error {
+	resp, err := call(socketPath, "fleet-opt-out", nil)
+	if err != nil {
+		return err
+	}
+	if !resp.OK {
+		return fmt.Errorf("fleet opt-out: %s", resp.Error)
+	}
+	fmt.Println("Fleet reporting disabled. Pending queue cleared.")
+	return nil
+}
+
 func printUsage() {
 	fmt.Print(`aetherctl — Aether OS daemon CLI
 
@@ -595,6 +662,9 @@ Commands:
   feedback <id> accept|dismiss  Respond to a suggestion by ID
   actions                       Show recent undoable actions
   config                        Print resolved daemon configuration
+  fleet status                  Show fleet reporting opt-in status
+  fleet preview                 Show what fleet data will be sent
+  fleet opt-out                 Disable fleet reporting
   purge                         Delete all local data (requires confirmation)
   export                        Export all data as newline-delimited JSON
 
