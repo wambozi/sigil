@@ -248,6 +248,7 @@ func cmdSuggestions(socketPath string) error {
 		Status     string  `json:"status"`
 		Confidence float64 `json:"confidence"`
 		Title      string  `json:"title"`
+		Body       string  `json:"body"`
 	}
 	if err := json.Unmarshal(resp.Payload, &suggestions); err != nil {
 		return fmt.Errorf("decode response: %w", err)
@@ -258,12 +259,14 @@ func cmdSuggestions(socketPath string) error {
 		return nil
 	}
 
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ID\tSTATUS\tCONFIDENCE\tTITLE")
 	for _, s := range suggestions {
-		fmt.Fprintf(w, "%d\t%s\t%.2f\t%s\n", s.ID, s.Status, s.Confidence, s.Title)
+		fmt.Printf("[%d] %s (%.2f) — %s\n", s.ID, s.Status, s.Confidence, s.Title)
+		if s.Body != "" {
+			fmt.Printf("    %s\n", s.Body)
+		}
+		fmt.Println()
 	}
-	return w.Flush()
+	return nil
 }
 
 // cmdSummary triggers an immediate analysis cycle in the daemon.
