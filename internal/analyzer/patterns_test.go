@@ -256,6 +256,71 @@ func TestDetector_StuckDetection_fewEditsWithFailures_noSuggestion(t *testing.T)
 	}
 }
 
+// --- DependencyChurn --------------------------------------------------------
+
+func TestDetector_DependencyChurn_fourEdits_suggestionReturned(t *testing.T) {
+	db := openMemoryStore(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	// 4 edits to go.sum (at or above threshold of 4).
+	for i := range 4 {
+		insertFile(t, ctx, db, "/proj/go.sum", now.Add(-time.Duration(4-i)*10*time.Minute))
+	}
+
+	det := NewDetector(db, newTestLogger())
+	suggestions, err := det.Detect(ctx, 2*time.Hour)
+	if err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+
+	if !hasSuggestionWithTitle(t, suggestions, "Dependency churn detected") {
+		t.Errorf("expected dependency churn suggestion; got %+v", suggestions)
+	}
+}
+
+func TestDetector_DependencyChurn_belowThreshold_noSuggestion(t *testing.T) {
+	db := openMemoryStore(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	// Only 2 edits to package-lock.json — below threshold.
+	for i := range 2 {
+		insertFile(t, ctx, db, "/proj/package-lock.json", now.Add(-time.Duration(2-i)*10*time.Minute))
+	}
+
+	det := NewDetector(db, newTestLogger())
+	suggestions, err := det.Detect(ctx, 2*time.Hour)
+	if err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+
+	if hasSuggestionWithTitle(t, suggestions, "Dependency churn detected") {
+		t.Error("expected no dependency churn suggestion below threshold")
+	}
+}
+
+func TestDetector_DependencyChurn_nonDepFile_noSuggestion(t *testing.T) {
+	db := openMemoryStore(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	// 10 edits to a regular file — not a dep file.
+	for i := range 10 {
+		insertFile(t, ctx, db, "/proj/main.go", now.Add(-time.Duration(10-i)*time.Minute))
+	}
+
+	det := NewDetector(db, newTestLogger())
+	suggestions, err := det.Detect(ctx, 2*time.Hour)
+	if err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+
+	if hasSuggestionWithTitle(t, suggestions, "Dependency churn detected") {
+		t.Error("expected no dependency churn suggestion for non-dep files")
+	}
+}
+
 // --- BuildFailureStreak -----------------------------------------------------
 
 func TestDetector_BuildFailureStreak_threeFailures_suggestionReturned(t *testing.T) {

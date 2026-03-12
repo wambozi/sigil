@@ -45,6 +45,10 @@ const stuckEditThreshold = 5
 // stuckWindow is the rolling window for counting edits per file.
 const stuckWindow = 15 * time.Minute
 
+// depChurnThreshold is the minimum number of edits to a single dependency file
+// before a dependency-churn suggestion is emitted.
+const depChurnThreshold = 4
+
 // Detector runs pure-Go heuristic pattern checks over the local event store
 // and returns actionable suggestions.  It never calls the network.
 type Detector struct {
@@ -71,6 +75,7 @@ func (d *Detector) Detect(ctx context.Context, window time.Duration) ([]notifier
 		{"edit_then_test", d.checkEditThenTest},
 		{"edit_test_fail_loop", d.checkEditTestFailLoop},
 		{"stuck_detection", d.checkStuckDetection},
+		{"dependency_churn", d.checkDependencyChurn},
 		{"frequent_files", d.checkFrequentFiles},
 		{"build_failure_streak", d.checkBuildFailureStreak},
 		{"context_switch_frequency", d.checkContextSwitchFrequency},
@@ -383,6 +388,64 @@ func (d *Detector) checkStuckDetection(ctx context.Context, since time.Time) ([]
 			})
 			break // one suggestion per file is enough
 		}
+	}
+	return out, nil
+}
+
+// depFileNames contains basenames of dependency/lock files that signal library
+// exploration when they change frequently.
+var depFileNames = map[string]bool{
+	"go.sum":            true,
+	"go.mod":            true,
+	"package-lock.json": true,
+	"yarn.lock":         true,
+	"pnpm-lock.yaml":    true,
+	"Cargo.lock":        true,
+	"Gemfile.lock":      true,
+	"poetry.lock":       true,
+	"requirements.txt":  true,
+	"Pipfile.lock":      true,
+	"composer.lock":     true,
+	"flake.lock":        true,
+}
+
+// checkDependencyChurn detects when dependency/lock files are being modified
+// frequently, which signals the engineer is exploring or evaluating libraries.
+func (d *Detector) checkDependencyChurn(ctx context.Context, since time.Time) ([]notifier.Suggestion, error) {
+	fileEvents, err := d.store.QueryRecentFileEvents(ctx, since)
+	if err != nil {
+		return nil, fmt.Errorf("patterns: dependency_churn: fetch file events: %w", err)
+	}
+	if len(fileEvents) == 0 {
+		return nil, nil
+	}
+
+	counts := make(map[string]int)
+	for _, fe := range fileEvents {
+		path, _ := fe.Payload["path"].(string)
+		if path == "" {
+			continue
+		}
+		base := filepath.Base(path)
+		if depFileNames[base] {
+			counts[path]++
+		}
+	}
+
+	var out []notifier.Suggestion
+	for path, n := range counts {
+		if n < depChurnThreshold {
+			continue
+		}
+		out = append(out, notifier.Suggestion{
+			Category:   "pattern",
+			Confidence: notifier.ConfidenceWeak,
+			Title:      "Dependency churn detected",
+			Body: fmt.Sprintf(
+				"%s changed %d times — exploring new dependencies? Consider documenting your evaluation criteria.",
+				filepath.Base(path), n,
+			),
+		})
 	}
 	return out, nil
 }
