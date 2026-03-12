@@ -1,7 +1,9 @@
 package store
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -355,6 +357,542 @@ func TestInsertFeedback(t *testing.T) {
 
 	if err := s.InsertFeedback(ctx, id, "accepted"); err != nil {
 		t.Fatalf("InsertFeedback: %v", err)
+	}
+}
+
+// --- QueryTopFiles ---------------------------------------------------------
+
+func TestQueryTopFiles(t *testing.T) {
+	s := openMemory(t)
+	ctx := context.Background()
+	now := time.Now().Truncate(time.Millisecond)
+
+	insertFile := func(path string, ts time.Time) {
+		t.Helper()
+		if err := s.InsertEvent(ctx, event.Event{
+			Kind: event.KindFile, Source: "files",
+			Payload:   map[string]any{"path": path, "op": "WRITE"},
+			Timestamp: ts,
+		}); err != nil {
+			t.Fatalf("InsertEvent: %v", err)
+		}
+	}
+
+	insertFile("/a.go", now)
+	insertFile("/a.go", now)
+	insertFile("/a.go", now)
+	insertFile("/b.go", now)
+	insertFile("/b.go", now)
+	insertFile("/c.go", now)
+
+	// Also insert a non-file event that should be ignored.
+	_ = s.InsertEvent(ctx, event.Event{
+		Kind: event.KindGit, Source: "git",
+		Payload: map[string]any{"path": "/d.go"}, Timestamp: now,
+	})
+
+	got, err := s.QueryTopFiles(ctx, now.Add(-time.Second), 2)
+	if err != nil {
+		t.Fatalf("QueryTopFiles: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(got))
+	}
+	if got[0].Path != "/a.go" || got[0].Count != 3 {
+		t.Errorf("top file: got %+v, want /a.go count=3", got[0])
+	}
+	if got[1].Path != "/b.go" || got[1].Count != 2 {
+		t.Errorf("second file: got %+v, want /b.go count=2", got[1])
+	}
+}
+
+func TestQueryTopFiles_emptyAndMalformed(t *testing.T) {
+	s := openMemory(t)
+	ctx := context.Background()
+
+	// Empty store returns empty slice.
+	got, err := s.QueryTopFiles(ctx, time.Now().Add(-time.Hour), 5)
+	if err != nil {
+		t.Fatalf("QueryTopFiles empty: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected 0, got %d", len(got))
+	}
+
+	// Insert an event with no "path" field — should be skipped.
+	_ = s.InsertEvent(ctx, event.Event{
+		Kind: event.KindFile, Source: "files",
+		Payload: map[string]any{"op": "WRITE"}, Timestamp: time.Now(),
+	})
+
+	got, err = s.QueryTopFiles(ctx, time.Now().Add(-time.Hour), 5)
+	if err != nil {
+		t.Fatalf("QueryTopFiles no-path: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected 0 (no path field), got %d", len(got))
+	}
+}
+
+// --- QueryTerminalEvents ---------------------------------------------------
+
+func TestQueryTerminalEvents(t *testing.T) {
+	s := openMemory(t)
+	ctx := context.Background()
+	now := time.Now().Truncate(time.Millisecond)
+	old := now.Add(-2 * time.Hour)
+
+	insert := func(kind event.Kind, ts time.Time) {
+		t.Helper()
+		_ = s.InsertEvent(ctx, event.Event{
+			Kind: kind, Source: "test",
+			Payload: map[string]any{"cmd": "go test"}, Timestamp: ts,
+		})
+	}
+
+	insert(event.KindTerminal, old)
+	insert(event.KindTerminal, now)
+	insert(event.KindFile, now) // wrong kind
+
+	since := now.Add(-time.Hour)
+	got, err := s.QueryTerminalEvents(ctx, since)
+	if err != nil {
+		t.Fatalf("QueryTerminalEvents: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 terminal event, got %d", len(got))
+	}
+	if got[0].Kind != event.KindTerminal {
+		t.Errorf("Kind: got %q, want %q", got[0].Kind, event.KindTerminal)
+	}
+	if !got[0].Timestamp.Equal(now) {
+		t.Errorf("Timestamp: got %v, want %v", got[0].Timestamp, now)
+	}
+}
+
+// --- QueryHyprlandEvents ---------------------------------------------------
+
+func TestQueryHyprlandEvents(t *testing.T) {
+	s := openMemory(t)
+	ctx := context.Background()
+	now := time.Now().Truncate(time.Millisecond)
+
+	_ = s.InsertEvent(ctx, event.Event{
+		Kind: event.KindHyprland, Source: "hyprland",
+		Payload: map[string]any{"window": "firefox"}, Timestamp: now,
+	})
+	_ = s.InsertEvent(ctx, event.Event{
+		Kind: event.KindFile, Source: "files",
+		Payload: map[string]any{}, Timestamp: now,
+	})
+
+	got, err := s.QueryHyprlandEvents(ctx, now.Add(-time.Second))
+	if err != nil {
+		t.Fatalf("QueryHyprlandEvents: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 hyprland event, got %d", len(got))
+	}
+	if got[0].Kind != event.KindHyprland {
+		t.Errorf("Kind: got %q, want %q", got[0].Kind, event.KindHyprland)
+	}
+}
+
+// --- QueryRecentFileEvents -------------------------------------------------
+
+func TestQueryRecentFileEvents(t *testing.T) {
+	s := openMemory(t)
+	ctx := context.Background()
+	now := time.Now().Truncate(time.Millisecond)
+	old := now.Add(-2 * time.Hour)
+
+	_ = s.InsertEvent(ctx, event.Event{
+		Kind: event.KindFile, Source: "files",
+		Payload: map[string]any{"path": "/old.go"}, Timestamp: old,
+	})
+	_ = s.InsertEvent(ctx, event.Event{
+		Kind: event.KindFile, Source: "files",
+		Payload: map[string]any{"path": "/new.go"}, Timestamp: now,
+	})
+	_ = s.InsertEvent(ctx, event.Event{
+		Kind: event.KindGit, Source: "git",
+		Payload: map[string]any{}, Timestamp: now,
+	})
+
+	since := now.Add(-time.Hour)
+	got, err := s.QueryRecentFileEvents(ctx, since)
+	if err != nil {
+		t.Fatalf("QueryRecentFileEvents: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 recent file event, got %d", len(got))
+	}
+	if got[0].Payload["path"] != "/new.go" {
+		t.Errorf("path: got %v, want /new.go", got[0].Payload["path"])
+	}
+}
+
+// --- QueryAIInteractions ---------------------------------------------------
+
+func TestQueryAIInteractions(t *testing.T) {
+	s := openMemory(t)
+	ctx := context.Background()
+	now := time.Now().Truncate(time.Millisecond)
+	old := now.Add(-2 * time.Hour)
+
+	insertAI := func(text, cat, routing string, accepted bool, ts time.Time) {
+		t.Helper()
+		if err := s.InsertAIInteraction(ctx, event.AIInteraction{
+			QueryText: text, QueryCategory: cat,
+			Routing: routing, LatencyMS: 100, Accepted: accepted, Timestamp: ts,
+		}); err != nil {
+			t.Fatalf("InsertAIInteraction: %v", err)
+		}
+	}
+
+	insertAI("old query", "debug", "local", false, old)
+	insertAI("recent query", "code_gen", "cloud", true, now)
+
+	since := now.Add(-time.Hour)
+	got, err := s.QueryAIInteractions(ctx, since)
+	if err != nil {
+		t.Fatalf("QueryAIInteractions: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1, got %d", len(got))
+	}
+	ai := got[0]
+	if ai.QueryText != "recent query" {
+		t.Errorf("QueryText: got %q, want %q", ai.QueryText, "recent query")
+	}
+	if ai.QueryCategory != "code_gen" {
+		t.Errorf("QueryCategory: got %q, want %q", ai.QueryCategory, "code_gen")
+	}
+	if ai.Routing != "cloud" {
+		t.Errorf("Routing: got %q, want %q", ai.Routing, "cloud")
+	}
+	if !ai.Accepted {
+		t.Error("Accepted: got false, want true")
+	}
+	if !ai.Timestamp.Equal(now) {
+		t.Errorf("Timestamp: got %v, want %v", ai.Timestamp, now)
+	}
+}
+
+func TestQueryAIInteractions_empty(t *testing.T) {
+	s := openMemory(t)
+	got, err := s.QueryAIInteractions(context.Background(), time.Now().Add(-time.Hour))
+	if err != nil {
+		t.Fatalf("QueryAIInteractions empty: %v", err)
+	}
+	if got != nil {
+		t.Errorf("expected nil slice from empty table, got len=%d", len(got))
+	}
+}
+
+// --- QuerySuggestionAcceptanceRate -----------------------------------------
+
+func TestQuerySuggestionAcceptanceRate(t *testing.T) {
+	s := openMemory(t)
+	ctx := context.Background()
+
+	// No resolved suggestions → 0.0.
+	rate, err := s.QuerySuggestionAcceptanceRate(ctx, time.Now().Add(-time.Hour))
+	if err != nil {
+		t.Fatalf("acceptance rate empty: %v", err)
+	}
+	if rate != 0.0 {
+		t.Errorf("empty rate: got %v, want 0.0", rate)
+	}
+
+	// Create 3 suggestions: accept 2, dismiss 1.
+	insertAndResolve := func(status SuggestionStatus) {
+		t.Helper()
+		id, err := s.InsertSuggestion(ctx, Suggestion{
+			Category: "pattern", Confidence: 0.8,
+			Title: "t", Body: "b", CreatedAt: time.Now(),
+		})
+		if err != nil {
+			t.Fatalf("InsertSuggestion: %v", err)
+		}
+		if err := s.UpdateSuggestionStatus(ctx, id, status); err != nil {
+			t.Fatalf("UpdateSuggestionStatus(%s): %v", status, err)
+		}
+	}
+
+	insertAndResolve(StatusAccepted)
+	insertAndResolve(StatusAccepted)
+	insertAndResolve(StatusDismissed)
+
+	rate, err = s.QuerySuggestionAcceptanceRate(ctx, time.Now().Add(-time.Hour))
+	if err != nil {
+		t.Fatalf("acceptance rate: %v", err)
+	}
+	// 2 accepted / 3 total ≈ 0.6667
+	want := 2.0 / 3.0
+	if rate < want-0.01 || rate > want+0.01 {
+		t.Errorf("acceptance rate: got %v, want ~%v", rate, want)
+	}
+}
+
+// --- QueryResolvedSuggestionCount ------------------------------------------
+
+func TestQueryResolvedSuggestionCount(t *testing.T) {
+	s := openMemory(t)
+	ctx := context.Background()
+
+	// Empty → 0.
+	n, err := s.QueryResolvedSuggestionCount(ctx, time.Now().Add(-time.Hour))
+	if err != nil {
+		t.Fatalf("resolved count empty: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("empty count: got %d, want 0", n)
+	}
+
+	// Insert: 1 accepted, 1 dismissed, 1 pending (unresolved).
+	resolve := func(status SuggestionStatus) {
+		t.Helper()
+		id, _ := s.InsertSuggestion(ctx, Suggestion{
+			Category: "insight", Confidence: 0.5,
+			Title: "t", Body: "b", CreatedAt: time.Now(),
+		})
+		_ = s.UpdateSuggestionStatus(ctx, id, status)
+	}
+
+	resolve(StatusAccepted)
+	resolve(StatusDismissed)
+	resolve(StatusShown) // shown but not resolved
+
+	n, err = s.QueryResolvedSuggestionCount(ctx, time.Now().Add(-time.Hour))
+	if err != nil {
+		t.Fatalf("resolved count: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("resolved count: got %d, want 2", n)
+	}
+}
+
+// --- InsertAction / QueryUndoableActions -----------------------------------
+
+func TestInsertAction_and_QueryUndoableActions(t *testing.T) {
+	s := openMemory(t)
+	ctx := context.Background()
+	now := time.Now().Truncate(time.Millisecond)
+
+	// Insert an action that expires in the future.
+	err := s.InsertAction(ctx, "act-1", "split build", "make split", "make unsplit",
+		now, now.Add(time.Hour))
+	if err != nil {
+		t.Fatalf("InsertAction: %v", err)
+	}
+
+	// Insert a duplicate — INSERT OR IGNORE should not error.
+	err = s.InsertAction(ctx, "act-1", "dup", "dup", "dup", now, now.Add(time.Hour))
+	if err != nil {
+		t.Fatalf("InsertAction duplicate: %v", err)
+	}
+
+	// Insert an already-expired action.
+	err = s.InsertAction(ctx, "act-expired", "old action", "cmd", "undo",
+		now.Add(-2*time.Hour), now.Add(-time.Hour))
+	if err != nil {
+		t.Fatalf("InsertAction expired: %v", err)
+	}
+
+	got, err := s.QueryUndoableActions(ctx)
+	if err != nil {
+		t.Fatalf("QueryUndoableActions: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 undoable action, got %d", len(got))
+	}
+	a := got[0]
+	if a.ID != "act-1" {
+		t.Errorf("ID: got %q, want %q", a.ID, "act-1")
+	}
+	if a.Description != "split build" {
+		t.Errorf("Description: got %q, want %q", a.Description, "split build")
+	}
+	if a.ExecuteCmd != "make split" {
+		t.Errorf("ExecuteCmd: got %q", a.ExecuteCmd)
+	}
+	if a.UndoCmd != "make unsplit" {
+		t.Errorf("UndoCmd: got %q", a.UndoCmd)
+	}
+	if a.UndoneAt != nil {
+		t.Errorf("UndoneAt: expected nil, got %v", a.UndoneAt)
+	}
+}
+
+// --- MarkActionUndone ------------------------------------------------------
+
+func TestMarkActionUndone(t *testing.T) {
+	s := openMemory(t)
+	ctx := context.Background()
+	now := time.Now().Truncate(time.Millisecond)
+
+	_ = s.InsertAction(ctx, "act-undo", "desc", "exec", "undo", now, now.Add(time.Hour))
+
+	// Before marking undone, it should be undoable.
+	got, _ := s.QueryUndoableActions(ctx)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 undoable before MarkActionUndone, got %d", len(got))
+	}
+
+	if err := s.MarkActionUndone(ctx, "act-undo"); err != nil {
+		t.Fatalf("MarkActionUndone: %v", err)
+	}
+
+	// After marking undone, it should no longer be undoable.
+	got, _ = s.QueryUndoableActions(ctx)
+	if len(got) != 0 {
+		t.Errorf("expected 0 undoable after MarkActionUndone, got %d", len(got))
+	}
+}
+
+// --- QueryPattern ----------------------------------------------------------
+
+func TestQueryPattern(t *testing.T) {
+	s := openMemory(t)
+	ctx := context.Background()
+
+	type patternData struct {
+		Score int    `json:"score"`
+		Name  string `json:"name"`
+	}
+
+	// Query non-existent pattern returns sql.ErrNoRows.
+	var empty patternData
+	err := s.QueryPattern(ctx, "nonexistent", &empty)
+	if err == nil {
+		t.Fatal("expected error for nonexistent pattern, got nil")
+	}
+
+	// Insert and retrieve.
+	if err := s.InsertPattern(ctx, "edit_then_test", patternData{Score: 42, Name: "edit-test"}); err != nil {
+		t.Fatalf("InsertPattern: %v", err)
+	}
+
+	var got patternData
+	if err := s.QueryPattern(ctx, "edit_then_test", &got); err != nil {
+		t.Fatalf("QueryPattern: %v", err)
+	}
+	if got.Score != 42 {
+		t.Errorf("Score: got %d, want 42", got.Score)
+	}
+	if got.Name != "edit-test" {
+		t.Errorf("Name: got %q, want %q", got.Name, "edit-test")
+	}
+
+	// Upsert overwrites.
+	if err := s.InsertPattern(ctx, "edit_then_test", patternData{Score: 99, Name: "updated"}); err != nil {
+		t.Fatalf("InsertPattern upsert: %v", err)
+	}
+	var got2 patternData
+	if err := s.QueryPattern(ctx, "edit_then_test", &got2); err != nil {
+		t.Fatalf("QueryPattern after upsert: %v", err)
+	}
+	if got2.Score != 99 {
+		t.Errorf("Score after upsert: got %d, want 99", got2.Score)
+	}
+}
+
+// --- Purge -----------------------------------------------------------------
+
+func TestPurge(t *testing.T) {
+	s := openMemory(t)
+	ctx := context.Background()
+
+	// Populate some data.
+	_ = s.InsertEvent(ctx, event.Event{
+		Kind: event.KindFile, Source: "files",
+		Payload: map[string]any{"path": "/x.go"}, Timestamp: time.Now(),
+	})
+	_, _ = s.InsertSuggestion(ctx, Suggestion{
+		Category: "pattern", Confidence: 0.8,
+		Title: "t", Body: "b", CreatedAt: time.Now(),
+	})
+	_ = s.InsertPattern(ctx, "test_kind", map[string]any{"key": "val"})
+	_ = s.InsertAIInteraction(ctx, event.AIInteraction{
+		Routing: "local", LatencyMS: 50, Timestamp: time.Now(),
+	})
+
+	// Verify data exists.
+	events, _ := s.QueryEvents(ctx, "", 10)
+	if len(events) == 0 {
+		t.Fatal("expected events before purge")
+	}
+
+	if err := s.Purge(); err != nil {
+		t.Fatalf("Purge: %v", err)
+	}
+
+	// After purge on :memory:, the DB is closed — no further queries possible.
+	// The test just verifies Purge completes without error on in-memory DBs.
+}
+
+// --- Export ----------------------------------------------------------------
+
+func TestExport(t *testing.T) {
+	s := openMemory(t)
+	ctx := context.Background()
+	now := time.Now().Truncate(time.Millisecond)
+
+	_ = s.InsertEvent(ctx, event.Event{
+		Kind: event.KindFile, Source: "files",
+		Payload: map[string]any{"path": "/main.go"}, Timestamp: now,
+	})
+	_, _ = s.InsertSuggestion(ctx, Suggestion{
+		Category: "pattern", Confidence: 0.9,
+		Title: "Test suggestion", Body: "body text",
+		ActionCmd: "go test", CreatedAt: now,
+	})
+
+	var buf bytes.Buffer
+	if err := s.Export(&buf); err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+
+	// Should have 2 lines of NDJSON (1 event + 1 suggestion).
+	lines := bytes.Split(bytes.TrimSpace(buf.Bytes()), []byte("\n"))
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 NDJSON lines, got %d", len(lines))
+	}
+
+	// Verify first line is an event.
+	var eventLine map[string]any
+	if err := json.Unmarshal(lines[0], &eventLine); err != nil {
+		t.Fatalf("unmarshal event line: %v", err)
+	}
+	if eventLine["type"] != "event" {
+		t.Errorf("event type: got %v, want %q", eventLine["type"], "event")
+	}
+	if eventLine["kind"] != "file" {
+		t.Errorf("event kind: got %v, want %q", eventLine["kind"], "file")
+	}
+
+	// Verify second line is a suggestion.
+	var sgLine map[string]any
+	if err := json.Unmarshal(lines[1], &sgLine); err != nil {
+		t.Fatalf("unmarshal suggestion line: %v", err)
+	}
+	if sgLine["type"] != "suggestion" {
+		t.Errorf("suggestion type: got %v, want %q", sgLine["type"], "suggestion")
+	}
+	if sgLine["title"] != "Test suggestion" {
+		t.Errorf("suggestion title: got %v", sgLine["title"])
+	}
+}
+
+func TestExport_empty(t *testing.T) {
+	s := openMemory(t)
+	var buf bytes.Buffer
+	if err := s.Export(&buf); err != nil {
+		t.Fatalf("Export empty: %v", err)
+	}
+	if buf.Len() != 0 {
+		t.Errorf("expected empty export, got %d bytes", buf.Len())
 	}
 }
 

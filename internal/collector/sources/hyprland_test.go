@@ -133,3 +133,19 @@ func TestFormatContextSwitchSummary(t *testing.T) {
 		t.Errorf("distinct = %d, want 2", distinct)
 	}
 }
+
+func TestWindowFocusEntry_String(t *testing.T) {
+	e := WindowFocusEntry{Class: "firefox", Count: 5}
+	got := e.String()
+	want := "firefox (5)"
+	if got != want {
+		t.Errorf("String() = %q, want %q", got, want)
+	}
+}
+
+func TestHyprlandSource_Name(t *testing.T) {
+	s := &HyprlandSource{}
+	if got := s.Name(); got != "hyprland" {
+		t.Errorf("Name() = %q, want %q", got, "hyprland")
+	}
+}

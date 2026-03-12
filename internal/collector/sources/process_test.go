@@ -94,3 +94,77 @@ func TestProcessSession_ExitStateInPayload(t *testing.T) {
 func pidStr(pid int) string {
 	return fmt.Sprintf("%d", pid)
 }
+
+func TestIsNumeric(t *testing.T) {
+	tests := []struct {
+		s    string
+		want bool
+	}{
+		{"123", true},
+		{"0", true},
+		{"", false},
+		{"12a3", false},
+		{"abc", false},
+		{"-1", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.s, func(t *testing.T) {
+			if got := isNumeric(tt.s); got != tt.want {
+				t.Errorf("isNumeric(%q) = %v, want %v", tt.s, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMatchesAny(t *testing.T) {
+	keywords := []string{"go test", "make", "cargo"}
+
+	tests := []struct {
+		s    string
+		want bool
+	}{
+		{"go test ./...", true},
+		{"GO TEST ./...", true}, // case insensitive
+		{"make build", true},
+		{"cargo build --release", true},
+		{"ls -la", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.s, func(t *testing.T) {
+			if got := matchesAny(tt.s, keywords); got != tt.want {
+				t.Errorf("matchesAny(%q) = %v, want %v", tt.s, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMatchesAny_emptyKeywords(t *testing.T) {
+	if matchesAny("anything", nil) {
+		t.Error("expected false for nil keywords")
+	}
+}
+
+func TestProcessSource_Name(t *testing.T) {
+	s := &ProcessSource{}
+	if got := s.Name(); got != "process" {
+		t.Errorf("Name() = %q, want %q", got, "process")
+	}
+}
+
+func TestAllKeywords(t *testing.T) {
+	kw := allKeywords()
+	if len(kw) == 0 {
+		t.Fatal("allKeywords() returned empty list")
+	}
+	// Should contain at least some known keywords.
+	found := make(map[string]bool)
+	for _, k := range kw {
+		found[k] = true
+	}
+	for _, want := range []string{"go test", "go build", "docker", "git", "claude"} {
+		if !found[want] {
+			t.Errorf("allKeywords() missing %q", want)
+		}
+	}
+}
