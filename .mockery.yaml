@@ -1,0 +1,30 @@
+with-expecter: false
+mockname: "Mock{{.InterfaceName}}"
+outpkg: "mocks"
+packages:
+  github.com/wambozi/sigil/internal/store:
+    interfaces:
+      EventReader:
+        config:
+          dir: "internal/store/mocks"
+      EventWriter:
+        config:
+          dir: "internal/store/mocks"
+      ReadWriter:
+        config:
+          dir: "internal/store/mocks"
+  github.com/wambozi/sigil/internal/inference:
+    interfaces:
+      Backend:
+        config:
+          dir: "internal/inference/mocks"
+  github.com/wambozi/sigil/internal/collector:
+    interfaces:
+      Source:
+        config:
+          dir: "internal/collector/mocks"
+  github.com/wambozi/sigil/internal/notifier:
+    interfaces:
+      Platform:
+        config:
+          dir: "internal/notifier/mocks"

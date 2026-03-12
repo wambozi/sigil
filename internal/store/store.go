@@ -22,6 +22,44 @@ type Store struct {
 	db *sql.DB
 }
 
+// EventReader is the read-only subset of Store used by the analyzer, fleet
+// reporter, and pattern detectors.
+type EventReader interface {
+	QueryEvents(ctx context.Context, kind event.Kind, n int) ([]event.Event, error)
+	CountEvents(ctx context.Context, kind event.Kind, since time.Time) (int64, error)
+	QueryTopFiles(ctx context.Context, since time.Time, n int) ([]FileEditCount, error)
+	QueryTerminalEvents(ctx context.Context, since time.Time) ([]event.Event, error)
+	QueryHyprlandEvents(ctx context.Context, since time.Time) ([]event.Event, error)
+	QueryRecentFileEvents(ctx context.Context, since time.Time) ([]event.Event, error)
+	QueryAIInteractions(ctx context.Context, since time.Time) ([]event.AIInteraction, error)
+	QuerySuggestionAcceptanceRate(ctx context.Context, since time.Time) (float64, error)
+	QueryResolvedSuggestionCount(ctx context.Context, since time.Time) (int64, error)
+	QueryPattern(ctx context.Context, kind string, dest any) error
+	QuerySuggestions(ctx context.Context, status SuggestionStatus, n int) ([]Suggestion, error)
+	QueryUndoableActions(ctx context.Context) ([]ActionRecord, error)
+}
+
+// EventWriter is the write subset of Store used by the collector and notifier.
+type EventWriter interface {
+	InsertEvent(ctx context.Context, e event.Event) error
+	InsertAIInteraction(ctx context.Context, ai event.AIInteraction) error
+	InsertPattern(ctx context.Context, kind string, summary any) error
+	InsertSuggestion(ctx context.Context, sg Suggestion) (int64, error)
+	UpdateSuggestionStatus(ctx context.Context, id int64, status SuggestionStatus) error
+	InsertFeedback(ctx context.Context, suggestionID int64, outcome string) error
+	InsertAction(ctx context.Context, actionID, description, executeCmd, undoCmd string, createdAt, expiresAt time.Time) error
+	MarkActionUndone(ctx context.Context, actionID string) error
+}
+
+// ReadWriter combines EventReader and EventWriter for components that need both.
+type ReadWriter interface {
+	EventReader
+	EventWriter
+}
+
+// Compile-time assertion: *Store satisfies ReadWriter.
+var _ ReadWriter = (*Store)(nil)
+
 // Open opens (or creates) the SQLite database at path and runs the schema
 // migrations.  The caller is responsible for calling Close.
 func Open(path string) (*Store, error) {

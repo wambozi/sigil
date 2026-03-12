@@ -13,15 +13,15 @@ type otherPlatform struct {
 	log *slog.Logger
 }
 
-func newPlatform(log *slog.Logger) platform {
+func newPlatform(log *slog.Logger) Platform {
 	return &otherPlatform{log: log}
 }
 
-func (p *otherPlatform) send(title, body string, _ bool) {
+func (p *otherPlatform) Send(title, body string, _ bool) {
 	p.log.Info("notifier: [stub] would send notification", "title", title, "body", body)
 }
 
-func (p *otherPlatform) execute(shellCmd string) error {
+func (p *otherPlatform) Execute(shellCmd string) error {
 	p.log.Info("notifier: [stub] would execute", "cmd", shellCmd)
 	return exec.ErrNotFound
 }

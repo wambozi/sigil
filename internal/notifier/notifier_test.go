@@ -32,8 +32,8 @@ type stubPlatform struct {
 	sends int
 }
 
-func (p *stubPlatform) send(_, _ string, _ bool) { p.sends++ }
-func (p *stubPlatform) execute(_ string) error    { return nil }
+func (p *stubPlatform) Send(_, _ string, _ bool) { p.sends++ }
+func (p *stubPlatform) Execute(_ string) error    { return nil }
 
 // --- Rate limiting tests ----------------------------------------------------
 

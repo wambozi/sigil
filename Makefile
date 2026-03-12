@@ -1,7 +1,7 @@
 SHELL := bash
 GO    := go
 
-.PHONY: fmt vet test check build run status
+.PHONY: fmt vet test check build run status generate
 
 fmt:
 	$(GO) fmt ./...
@@ -11,6 +11,10 @@ vet:
 
 test:
 	$(GO) test ./...
+
+## generate runs mockery to regenerate mock implementations.
+generate:
+	mockery
 
 ## check runs fmt, vet, and test in sequence — use this before committing.
 check: fmt vet test

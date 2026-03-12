@@ -29,11 +29,23 @@ type CompletionResult struct {
 	LatencyMS int64  `json:"latency_ms"`
 }
 
+// Backend is implemented by each inference backend (local, cloud).
+type Backend interface {
+	Complete(ctx context.Context, system, user string) (*CompletionResult, error)
+	Ping(ctx context.Context) error
+}
+
+// Compile-time assertions: both backends satisfy Backend.
+var (
+	_ Backend = (*LocalBackend)(nil)
+	_ Backend = (*CloudBackend)(nil)
+)
+
 // Engine manages local and cloud inference backends and routes requests
 // according to the configured RoutingMode.
 type Engine struct {
-	local *LocalBackend
-	cloud *CloudBackend
+	local Backend
+	cloud Backend
 	mode  RoutingMode
 	log   *slog.Logger
 }
@@ -138,10 +150,16 @@ func (e *Engine) Ping(ctx context.Context) error {
 	}
 }
 
-// Close releases resources held by the engine.
+// Stoppable is optionally implemented by backends that manage a subprocess.
+type Stoppable interface {
+	Stop() error
+}
+
+// Close releases resources held by the engine. If the local backend is a
+// managed subprocess, it is stopped.
 func (e *Engine) Close() error {
-	if e.local != nil {
-		return e.local.Stop()
+	if s, ok := e.local.(Stoppable); ok {
+		return s.Stop()
 	}
 	return nil
 }

@@ -57,10 +57,10 @@ type Suggestion struct {
 	ActionCmd  string  // Optional shell command (empty if not actionable)
 }
 
-// platform is the interface each OS backend implements.
-type platform interface {
-	send(title, body string, withAction bool)
-	execute(cmd string) error
+// Platform is the interface each OS backend implements.
+type Platform interface {
+	Send(title, body string, withAction bool)
+	Execute(cmd string) error
 }
 
 // Notifier stores every suggestion and surfaces it according to the current
@@ -69,7 +69,7 @@ type Notifier struct {
 	mu       sync.RWMutex
 	level    Level
 	store    *store.Store
-	platform platform
+	platform Platform
 	log      *slog.Logger
 
 	// digestQueue accumulates suggestions for the daily digest (Level 1).
@@ -213,7 +213,7 @@ func (n *Notifier) FlushDigest() {
 		body += "• " + sg.Title + ": " + sg.Body
 	}
 
-	n.platform.send("Sigil daily digest", body, false)
+	n.platform.Send("Sigil daily digest", body, false)
 }
 
 // show marks the suggestion as shown, sends the notification, then marks it
@@ -222,7 +222,7 @@ func (n *Notifier) show(id int64, sg Suggestion, withAction bool) {
 	ctx := context.Background()
 	_ = n.store.UpdateSuggestionStatus(ctx, id, store.StatusShown)
 
-	n.platform.send(sg.Title, sg.Body, withAction)
+	n.platform.Send(sg.Title, sg.Body, withAction)
 
 	// For v0, all shown suggestions that aren't explicitly acted on are marked
 	// ignored after a short window.  Phase 3 will hook into D-Bus action
@@ -239,7 +239,7 @@ func (n *Notifier) executeWithCountdown(id int64, sg Suggestion) {
 	n.log.Info("notifier: autonomous action in 3s",
 		"cmd", sg.ActionCmd, "title", sg.Title)
 
-	n.platform.send(
+	n.platform.Send(
 		sg.Title,
 		sg.Body+"\n[Running in 3s: "+sg.ActionCmd+"]",
 		false,
@@ -248,7 +248,7 @@ func (n *Notifier) executeWithCountdown(id int64, sg Suggestion) {
 	time.Sleep(3 * time.Second)
 
 	n.log.Info("notifier: executing autonomous action", "cmd", sg.ActionCmd)
-	if err := n.platform.execute(sg.ActionCmd); err != nil {
+	if err := n.platform.Execute(sg.ActionCmd); err != nil {
 		n.log.Warn("notifier: autonomous action failed", "cmd", sg.ActionCmd, "err", err)
 		_ = n.store.UpdateSuggestionStatus(ctx, id, store.StatusIgnored)
 		return

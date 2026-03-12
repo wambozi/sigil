@@ -8,3 +8,5 @@ result-*
 *.exe
 /sigilctl
 /sigild
+cover.out
+dev.toml

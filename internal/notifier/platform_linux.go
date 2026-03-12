@@ -15,11 +15,11 @@ type linuxPlatform struct {
 	log *slog.Logger
 }
 
-func newPlatform(log *slog.Logger) platform {
+func newPlatform(log *slog.Logger) Platform {
 	return &linuxPlatform{log: log}
 }
 
-func (p *linuxPlatform) send(title, body string, _ bool) {
+func (p *linuxPlatform) Send(title, body string, _ bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -39,7 +39,7 @@ func (p *linuxPlatform) send(title, body string, _ bool) {
 	}
 }
 
-func (p *linuxPlatform) execute(shellCmd string) error {
+func (p *linuxPlatform) Execute(shellCmd string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 

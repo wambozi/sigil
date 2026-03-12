@@ -16,11 +16,11 @@ type darwinPlatform struct {
 	log *slog.Logger
 }
 
-func newPlatform(log *slog.Logger) platform {
+func newPlatform(log *slog.Logger) Platform {
 	return &darwinPlatform{log: log}
 }
 
-func (p *darwinPlatform) send(title, body string, _ bool) {
+func (p *darwinPlatform) Send(title, body string, _ bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -39,7 +39,7 @@ func (p *darwinPlatform) send(title, body string, _ bool) {
 	}
 }
 
-func (p *darwinPlatform) execute(shellCmd string) error {
+func (p *darwinPlatform) Execute(shellCmd string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
