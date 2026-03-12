@@ -107,6 +107,86 @@ func TestDetector_EditThenTest_belowThreshold_noSuggestion(t *testing.T) {
 	}
 }
 
+// --- EditTestFailLoop -------------------------------------------------------
+
+func TestDetector_EditTestFailLoop_threeCycles_suggestionReturned(t *testing.T) {
+	db := openMemoryStore(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	// Simulate 3 edit→fail→re-edit cycles on the same file within 30 minutes.
+	// Cycle 1: edit at -25min, test fails at -24min
+	// Cycle 2: re-edit at -20min, test fails at -19min
+	// Cycle 3: re-edit at -15min, test fails at -14min
+	// Final re-edit at -10min (completes 3rd cycle)
+	insertFile(t, ctx, db, "/proj/handler.go", now.Add(-25*time.Minute))
+	insertTerminal(t, ctx, db, "go test ./...", 1, "/proj", now.Add(-24*time.Minute))
+	insertFile(t, ctx, db, "/proj/handler.go", now.Add(-20*time.Minute)) // cycle 1 complete
+	insertTerminal(t, ctx, db, "go test ./...", 1, "/proj", now.Add(-19*time.Minute))
+	insertFile(t, ctx, db, "/proj/handler.go", now.Add(-15*time.Minute)) // cycle 2 complete
+	insertTerminal(t, ctx, db, "go test ./...", 1, "/proj", now.Add(-14*time.Minute))
+	insertFile(t, ctx, db, "/proj/handler.go", now.Add(-10*time.Minute)) // cycle 3 complete
+
+	det := NewDetector(db, newTestLogger())
+	suggestions, err := det.Detect(ctx, time.Hour)
+	if err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+
+	if !hasSuggestionWithTitle(t, suggestions, "Edit-test-fail loop detected") {
+		t.Errorf("expected edit-test-fail loop suggestion; got %+v", suggestions)
+	}
+}
+
+func TestDetector_EditTestFailLoop_belowThreshold_noSuggestion(t *testing.T) {
+	db := openMemoryStore(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	// Only 2 cycles — below the threshold of 3.
+	insertFile(t, ctx, db, "/proj/handler.go", now.Add(-25*time.Minute))
+	insertTerminal(t, ctx, db, "go test ./...", 1, "/proj", now.Add(-24*time.Minute))
+	insertFile(t, ctx, db, "/proj/handler.go", now.Add(-20*time.Minute)) // cycle 1
+	insertTerminal(t, ctx, db, "go test ./...", 1, "/proj", now.Add(-19*time.Minute))
+	insertFile(t, ctx, db, "/proj/handler.go", now.Add(-15*time.Minute)) // cycle 2
+
+	det := NewDetector(db, newTestLogger())
+	suggestions, err := det.Detect(ctx, time.Hour)
+	if err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+
+	if hasSuggestionWithTitle(t, suggestions, "Edit-test-fail loop detected") {
+		t.Error("expected no suggestion with only 2 cycles")
+	}
+}
+
+func TestDetector_EditTestFailLoop_successBreaksCycle(t *testing.T) {
+	db := openMemoryStore(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	// Edit → fail → re-edit → SUCCESS → edit → fail → re-edit.
+	// The success resets the pattern; only 1 cycle after the success.
+	insertFile(t, ctx, db, "/proj/handler.go", now.Add(-25*time.Minute))
+	insertTerminal(t, ctx, db, "go test ./...", 1, "/proj", now.Add(-24*time.Minute))
+	insertFile(t, ctx, db, "/proj/handler.go", now.Add(-20*time.Minute)) // cycle 1
+	insertTerminal(t, ctx, db, "go test ./...", 0, "/proj", now.Add(-19*time.Minute)) // success
+	insertFile(t, ctx, db, "/proj/handler.go", now.Add(-15*time.Minute))
+	insertTerminal(t, ctx, db, "go test ./...", 1, "/proj", now.Add(-14*time.Minute))
+	insertFile(t, ctx, db, "/proj/handler.go", now.Add(-10*time.Minute)) // cycle 2
+
+	det := NewDetector(db, newTestLogger())
+	suggestions, err := det.Detect(ctx, time.Hour)
+	if err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+
+	if hasSuggestionWithTitle(t, suggestions, "Edit-test-fail loop detected") {
+		t.Error("expected no suggestion when success breaks the cycle")
+	}
+}
+
 // --- BuildFailureStreak -----------------------------------------------------
 
 func TestDetector_BuildFailureStreak_threeFailures_suggestionReturned(t *testing.T) {

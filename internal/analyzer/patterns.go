@@ -30,6 +30,14 @@ const buildFailStreakMin = 3
 // above which a context-switching suggestion is emitted.
 const contextSwitchHourlyLimit = 6
 
+// editTestFailLoopMin is the minimum number of edit→fail cycles on a single
+// file before an "edit-test-fail loop" suggestion is emitted.
+const editTestFailLoopMin = 3
+
+// editTestFailLoopWindow is the rolling window within which edit→fail cycles
+// are counted.  Cycles older than this are discarded.
+const editTestFailLoopWindow = 30 * time.Minute
+
 // Detector runs pure-Go heuristic pattern checks over the local event store
 // and returns actionable suggestions.  It never calls the network.
 type Detector struct {
@@ -54,6 +62,7 @@ func (d *Detector) Detect(ctx context.Context, window time.Duration) ([]notifier
 		fn   checkFn
 	}{
 		{"edit_then_test", d.checkEditThenTest},
+		{"edit_test_fail_loop", d.checkEditTestFailLoop},
 		{"frequent_files", d.checkFrequentFiles},
 		{"build_failure_streak", d.checkBuildFailureStreak},
 		{"context_switch_frequency", d.checkContextSwitchFrequency},
@@ -139,6 +148,144 @@ func (d *Detector) checkEditThenTest(ctx context.Context, since time.Time) ([]no
 			Body: fmt.Sprintf(
 				"You run tests after %.0f%% of edits in %s — consider a file-watch test runner.",
 				ratio*100, dir,
+			),
+		})
+	}
+	return out, nil
+}
+
+// checkEditTestFailLoop detects the edit→test-fail→edit-same-file loop pattern
+// which is the strongest signal that an engineer is stuck.  For each file, it
+// counts cycles of: (1) file edited, (2) test/build fails within editTestWindow,
+// (3) same file edited again.  If a file accumulates >= editTestFailLoopMin
+// cycles within editTestFailLoopWindow, a high-confidence suggestion is emitted.
+func (d *Detector) checkEditTestFailLoop(ctx context.Context, since time.Time) ([]notifier.Suggestion, error) {
+	fileEvents, err := d.store.QueryRecentFileEvents(ctx, since)
+	if err != nil {
+		return nil, fmt.Errorf("patterns: edit_test_fail_loop: fetch file events: %w", err)
+	}
+	termEvents, err := d.store.QueryTerminalEvents(ctx, since)
+	if err != nil {
+		return nil, fmt.Errorf("patterns: edit_test_fail_loop: fetch terminal events: %w", err)
+	}
+	if len(fileEvents) == 0 || len(termEvents) == 0 {
+		return nil, nil
+	}
+
+	// For each file, collect timestamps of edit→fail cycles.
+	// A cycle is: file edited at T1, then a test/build fails between T1 and
+	// T1+editTestWindow, then the same file is edited again at T2 > fail time.
+	// We record T2 as the cycle-completion timestamp.
+	type fileState struct {
+		editedAt   time.Time // most recent edit timestamp
+		awaitFail  bool      // true = we've seen an edit, waiting for a failure
+		awaitRedit bool      // true = we've seen a failure, waiting for re-edit
+		cycles     []time.Time
+	}
+	files := make(map[string]*fileState)
+
+	// Build a merged timeline of file and terminal events.
+	type timelineEntry struct {
+		ts       time.Time
+		isFile   bool
+		path     string // only for file events
+		cmd      string // only for terminal events
+		exitCode int    // only for terminal events
+	}
+	timeline := make([]timelineEntry, 0, len(fileEvents)+len(termEvents))
+	for _, fe := range fileEvents {
+		path, _ := fe.Payload["path"].(string)
+		if path == "" {
+			continue
+		}
+		timeline = append(timeline, timelineEntry{
+			ts:     fe.Timestamp,
+			isFile: true,
+			path:   path,
+		})
+	}
+	for _, te := range termEvents {
+		cmd := cmdFromPayload(te.Payload)
+		if !isTestOrBuildCmd(cmd) {
+			continue
+		}
+		timeline = append(timeline, timelineEntry{
+			ts:       te.Timestamp,
+			isFile:   false,
+			cmd:      cmd,
+			exitCode: exitCodeFromPayload(te.Payload),
+		})
+	}
+
+	// Sort by timestamp (both sources are already sorted, but merge order isn't guaranteed).
+	for i := 1; i < len(timeline); i++ {
+		for j := i; j > 0 && timeline[j].ts.Before(timeline[j-1].ts); j-- {
+			timeline[j], timeline[j-1] = timeline[j-1], timeline[j]
+		}
+	}
+
+	for _, entry := range timeline {
+		if entry.isFile {
+			fs, ok := files[entry.path]
+			if !ok {
+				fs = &fileState{}
+				files[entry.path] = fs
+			}
+
+			if fs.awaitRedit {
+				// Completing a cycle: edit → fail → re-edit.
+				fs.cycles = append(fs.cycles, entry.ts)
+				fs.awaitRedit = false
+			}
+			// Start tracking a new potential cycle.
+			fs.editedAt = entry.ts
+			fs.awaitFail = true
+		} else {
+			// Terminal event: a failing test/build command.
+			if entry.exitCode == 0 {
+				continue
+			}
+			// Check all files that have a pending edit within the window.
+			for _, fs := range files {
+				if !fs.awaitFail {
+					continue
+				}
+				if entry.ts.Sub(fs.editedAt) > editTestWindow {
+					fs.awaitFail = false
+					continue
+				}
+				// This failure is correlated with the file edit.
+				fs.awaitFail = false
+				fs.awaitRedit = true
+			}
+		}
+	}
+
+	var out []notifier.Suggestion
+	for path, fs := range files {
+		if len(fs.cycles) < editTestFailLoopMin {
+			continue
+		}
+
+		// Count only cycles within the rolling window.
+		cutoff := fs.cycles[len(fs.cycles)-1].Add(-editTestFailLoopWindow)
+		count := 0
+		for _, t := range fs.cycles {
+			if !t.Before(cutoff) {
+				count++
+			}
+		}
+		if count < editTestFailLoopMin {
+			continue
+		}
+
+		out = append(out, notifier.Suggestion{
+			Category:   "pattern",
+			Confidence: notifier.ConfidenceStrong,
+			Title:      "Edit-test-fail loop detected",
+			Body: fmt.Sprintf(
+				"%s edited and tested %d times, all failing — consider reviewing the error output or rethinking your approach.",
+				filepath.Base(path), count,
 			),
 		})
 	}
