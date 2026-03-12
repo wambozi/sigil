@@ -348,6 +348,12 @@ func (s *Store) QueryTerminalEvents(ctx context.Context, since time.Time) ([]eve
 	return s.queryEventsSince(ctx, event.KindTerminal, since)
 }
 
+// QueryHyprlandEvents returns all Hyprland events (kind="hyprland") with a
+// timestamp at or after since, ordered by timestamp ascending.
+func (s *Store) QueryHyprlandEvents(ctx context.Context, since time.Time) ([]event.Event, error) {
+	return s.queryEventsSince(ctx, event.KindHyprland, since)
+}
+
 // QueryRecentFileEvents returns all file events (kind="file") with a timestamp
 // at or after since, ordered by timestamp ascending.
 func (s *Store) QueryRecentFileEvents(ctx context.Context, since time.Time) ([]event.Event, error) {

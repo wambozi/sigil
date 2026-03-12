@@ -856,6 +856,86 @@ func TestDetector_ProgressiveDisclosure_tier2_fileAware(t *testing.T) {
 	}
 }
 
+// --- WindowContextSwitching -------------------------------------------------
+
+func insertHyprland(t *testing.T, ctx context.Context, db interface {
+	InsertEvent(context.Context, event.Event) error
+}, windowClass, windowTitle string, ts time.Time) {
+	t.Helper()
+	if err := db.InsertEvent(ctx, event.Event{
+		Kind:   event.KindHyprland,
+		Source: "test",
+		Payload: map[string]any{
+			"window_class": windowClass,
+			"window_title": windowTitle,
+			"action":       "focus",
+		},
+		Timestamp: ts,
+	}); err != nil {
+		t.Fatalf("insertHyprland %s: %v", windowClass, err)
+	}
+}
+
+func TestDetector_WindowContextSwitching_highRate_suggestionReturned(t *testing.T) {
+	db := openMemoryStore(t)
+	ctx := context.Background()
+
+	// 35 window focus events in a single hour — above the 30/hr threshold.
+	base := time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)
+	apps := []string{"kitty", "firefox", "code", "slack"}
+	for i := range 35 {
+		insertHyprland(t, ctx, db, apps[i%len(apps)], "title",
+			base.Add(time.Duration(i)*time.Minute))
+	}
+
+	det := NewDetector(db, newTestLogger())
+	suggestions, err := det.checkWindowContextSwitching(ctx, base.Add(-time.Hour))
+	if err != nil {
+		t.Fatalf("checkWindowContextSwitching: %v", err)
+	}
+
+	if !hasSuggestionWithTitle(t, suggestions, "High window switching") {
+		t.Errorf("expected window switching suggestion; got %+v", suggestions)
+	}
+}
+
+func TestDetector_WindowContextSwitching_lowRate_noSuggestion(t *testing.T) {
+	db := openMemoryStore(t)
+	ctx := context.Background()
+
+	// 10 focus events in an hour — below threshold.
+	base := time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)
+	for i := range 10 {
+		insertHyprland(t, ctx, db, "kitty", "title",
+			base.Add(time.Duration(i)*5*time.Minute))
+	}
+
+	det := NewDetector(db, newTestLogger())
+	suggestions, err := det.checkWindowContextSwitching(ctx, base.Add(-time.Hour))
+	if err != nil {
+		t.Fatalf("checkWindowContextSwitching: %v", err)
+	}
+
+	if hasSuggestionWithTitle(t, suggestions, "High window switching") {
+		t.Error("expected no suggestion for low window switch rate")
+	}
+}
+
+func TestDetector_WindowContextSwitching_noEvents_noSuggestion(t *testing.T) {
+	db := openMemoryStore(t)
+	ctx := context.Background()
+
+	det := NewDetector(db, newTestLogger())
+	suggestions, err := det.checkWindowContextSwitching(ctx, time.Now().Add(-time.Hour))
+	if err != nil {
+		t.Fatalf("checkWindowContextSwitching: %v", err)
+	}
+
+	if len(suggestions) != 0 {
+		t.Errorf("expected no suggestions with no events; got %+v", suggestions)
+	}
+}
+
 // --- isTestOrBuildCmd -------------------------------------------------------
 
 func TestIsTestOrBuildCmd(t *testing.T) {

@@ -45,6 +45,10 @@ const stuckEditThreshold = 5
 // stuckWindow is the rolling window for counting edits per file.
 const stuckWindow = 15 * time.Minute
 
+// windowSwitchHourlyLimit is the number of Hyprland window focus changes per
+// hour above which a window-context-switching suggestion is emitted.
+const windowSwitchHourlyLimit = 30
+
 // depChurnThreshold is the minimum number of edits to a single dependency file
 // before a dependency-churn suggestion is emitted.
 const depChurnThreshold = 4
@@ -79,6 +83,7 @@ func (d *Detector) Detect(ctx context.Context, window time.Duration) ([]notifier
 		{"frequent_files", d.checkFrequentFiles},
 		{"build_failure_streak", d.checkBuildFailureStreak},
 		{"context_switch_frequency", d.checkContextSwitchFrequency},
+		{"window_context_switching", d.checkWindowContextSwitching},
 		{"time_of_day", d.checkTimeOfDay},
 		{"day_of_week_productivity", d.checkDayOfWeekProductivity},
 		{"session_length", d.checkSessionLength},
@@ -1149,4 +1154,85 @@ func isTestOrBuildCmd(cmd string) bool {
 		}
 	}
 	return false
+}
+
+// checkWindowContextSwitching uses Hyprland window focus events to detect
+// excessive window switching.  It buckets focus changes into one-hour slots
+// and fires when any hour exceeds windowSwitchHourlyLimit.  Also reports the
+// top 3 apps by focus count to help the user see where attention went.
+func (d *Detector) checkWindowContextSwitching(ctx context.Context, since time.Time) ([]notifier.Suggestion, error) {
+	hyprEvents, err := d.store.QueryHyprlandEvents(ctx, since)
+	if err != nil {
+		return nil, fmt.Errorf("patterns: window_context_switching: %w", err)
+	}
+	if len(hyprEvents) < 2 {
+		return nil, nil
+	}
+
+	// Bucket focus events into one-hour slots.
+	type hourKey int64
+	hourOf := func(t time.Time) hourKey {
+		return hourKey(t.Unix() / 3600)
+	}
+
+	switchesPerHour := make(map[hourKey]int)
+	for _, e := range hyprEvents {
+		h := hourOf(e.Timestamp)
+		switchesPerHour[h]++
+	}
+
+	maxSwitches := 0
+	for _, n := range switchesPerHour {
+		if n > maxSwitches {
+			maxSwitches = n
+		}
+	}
+
+	if maxSwitches <= windowSwitchHourlyLimit {
+		return nil, nil
+	}
+
+	// Build a top-apps summary.
+	appCounts := make(map[string]int)
+	for _, e := range hyprEvents {
+		cls, _ := e.Payload["window_class"].(string)
+		if cls != "" {
+			appCounts[cls]++
+		}
+	}
+
+	type appEntry struct {
+		name  string
+		count int
+	}
+	apps := make([]appEntry, 0, len(appCounts))
+	for name, count := range appCounts {
+		apps = append(apps, appEntry{name, count})
+	}
+	for i := 1; i < len(apps); i++ {
+		for j := i; j > 0 && apps[j].count > apps[j-1].count; j-- {
+			apps[j], apps[j-1] = apps[j-1], apps[j]
+		}
+	}
+	if len(apps) > 3 {
+		apps = apps[:3]
+	}
+
+	topStr := ""
+	for i, a := range apps {
+		if i > 0 {
+			topStr += ", "
+		}
+		topStr += fmt.Sprintf("%s (%d)", a.name, a.count)
+	}
+
+	return []notifier.Suggestion{{
+		Category:   "pattern",
+		Confidence: notifier.ConfidenceWeak,
+		Title:      "High window switching",
+		Body: fmt.Sprintf(
+			"Frequent window switching detected — %d focus changes in a single hour. Top apps: %s.",
+			maxSwitches, topStr,
+		),
+	}}, nil
 }
