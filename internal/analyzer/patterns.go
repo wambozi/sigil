@@ -541,28 +541,32 @@ func topN(counts map[string]int64, n int) []store.FileEditCount {
 }
 
 // checkBuildFailureStreak detects three or more consecutive build or test
-// command failures and suggests reviewing the error output.
+// command failures and suggests reviewing the error output. When session IDs
+// are present, streaks are counted per session and the worst is reported.
 func (d *Detector) checkBuildFailureStreak(ctx context.Context, since time.Time) ([]notifier.Suggestion, error) {
 	termEvents, err := d.store.QueryTerminalEvents(ctx, since)
 	if err != nil {
 		return nil, fmt.Errorf("patterns: build_failure_streak: %w", err)
 	}
 
-	streak := 0
+	groups := groupBySession(termEvents)
 	maxStreak := 0
-	for _, te := range termEvents {
-		cmd := event.CmdFromPayload(te.Payload)
-		if !event.IsTestOrBuildCmd(cmd) {
-			continue
-		}
-		exitCode := exitCodeOrZero(te.Payload)
-		if exitCode != 0 {
-			streak++
-			if streak > maxStreak {
-				maxStreak = streak
+	for _, events := range groups {
+		streak := 0
+		for _, te := range events {
+			cmd := event.CmdFromPayload(te.Payload)
+			if !event.IsTestOrBuildCmd(cmd) {
+				continue
 			}
-		} else {
-			streak = 0
+			exitCode := exitCodeOrZero(te.Payload)
+			if exitCode != 0 {
+				streak++
+				if streak > maxStreak {
+					maxStreak = streak
+				}
+			} else {
+				streak = 0
+			}
 		}
 	}
 
@@ -578,7 +582,9 @@ func (d *Detector) checkBuildFailureStreak(ctx context.Context, since time.Time)
 }
 
 // checkContextSwitchFrequency counts working-directory changes per hour and
-// emits a suggestion when the rate exceeds contextSwitchHourlyLimit.
+// emits a suggestion when the rate exceeds contextSwitchHourlyLimit. When
+// session IDs are present, switches are counted per session and the worst
+// hourly rate is reported.
 func (d *Detector) checkContextSwitchFrequency(ctx context.Context, since time.Time) ([]notifier.Suggestion, error) {
 	termEvents, err := d.store.QueryTerminalEvents(ctx, since)
 	if err != nil {
@@ -588,38 +594,36 @@ func (d *Detector) checkContextSwitchFrequency(ctx context.Context, since time.T
 		return nil, nil
 	}
 
-	// Bucket events into one-hour slots keyed by the hour boundary (Unix
-	// seconds truncated to the hour).
 	type hourKey int64
 	hourOf := func(t time.Time) hourKey {
 		return hourKey(t.Unix() / 3600)
 	}
 
-	// switchesPerHour counts directory transitions within each hour bucket.
-	switchesPerHour := make(map[hourKey]int)
-	prevCwd := ""
-	prevHour := hourKey(0)
-
-	for i, te := range termEvents {
-		cwd := cwdFromPayload(te.Payload)
-		h := hourOf(te.Timestamp)
-
-		if i == 0 {
-			prevCwd = cwd
-			prevHour = h
-			continue
-		}
-		if cwd != prevCwd && cwd != "" {
-			switchesPerHour[prevHour]++
-		}
-		prevCwd = cwd
-		prevHour = h
-	}
-
+	groups := groupBySession(termEvents)
 	maxSwitches := 0
-	for _, n := range switchesPerHour {
-		if n > maxSwitches {
-			maxSwitches = n
+
+	for _, events := range groups {
+		switchesPerHour := make(map[hourKey]int)
+		prevCwd := ""
+
+		for i, te := range events {
+			cwd := cwdFromPayload(te.Payload)
+			h := hourOf(te.Timestamp)
+
+			if i == 0 {
+				prevCwd = cwd
+				continue
+			}
+			if cwd != prevCwd && cwd != "" {
+				switchesPerHour[h]++
+			}
+			prevCwd = cwd
+		}
+
+		for _, n := range switchesPerHour {
+			if n > maxSwitches {
+				maxSwitches = n
+			}
 		}
 	}
 
@@ -732,7 +736,9 @@ func (d *Detector) checkDayOfWeekProductivity(ctx context.Context, since time.Ti
 }
 
 // checkSessionLength computes average coding session length from terminal events
-// and emits a suggestion when the average exceeds 60 minutes with at least 3 sessions.
+// and emits a suggestion when the average exceeds 60 minutes with at least 3
+// sessions. When session IDs are present, each session's duration is computed
+// from its first to last event; otherwise gap-splitting is used as fallback.
 func (d *Detector) checkSessionLength(ctx context.Context, since time.Time) ([]notifier.Suggestion, error) {
 	termEvents, err := d.store.QueryTerminalEvents(ctx, since)
 	if err != nil {
@@ -742,20 +748,14 @@ func (d *Detector) checkSessionLength(ctx context.Context, since time.Time) ([]n
 		return nil, nil
 	}
 
+	groups := groupBySession(termEvents)
 	var sessions []time.Duration
-	sessionStart := termEvents[0].Timestamp
-	lastTS := termEvents[0].Timestamp
-
-	for i := 1; i < len(termEvents); i++ {
-		gap := termEvents[i].Timestamp.Sub(lastTS)
-		if gap > sessionGap {
-			sessions = append(sessions, lastTS.Sub(sessionStart))
-			sessionStart = termEvents[i].Timestamp
+	for _, events := range groups {
+		if len(events) < 2 {
+			continue
 		}
-		lastTS = termEvents[i].Timestamp
+		sessions = append(sessions, events[len(events)-1].Timestamp.Sub(events[0].Timestamp))
 	}
-	// Close the final session.
-	sessions = append(sessions, lastTS.Sub(sessionStart))
 
 	if len(sessions) < 3 {
 		return nil, nil
@@ -783,8 +783,7 @@ func (d *Detector) checkSessionLength(ctx context.Context, since time.Time) ([]n
 }
 
 // checkIdleGaps reports session count and average duration as a daily insight.
-// This uses the same session-splitting logic as checkSessionLength but surfaces
-// the data as informational rather than as a warning.
+// Uses session ID grouping when available, falling back to gap-splitting.
 func (d *Detector) checkIdleGaps(ctx context.Context, since time.Time) ([]notifier.Suggestion, error) {
 	termEvents, err := d.store.QueryTerminalEvents(ctx, since)
 	if err != nil {
@@ -794,19 +793,14 @@ func (d *Detector) checkIdleGaps(ctx context.Context, since time.Time) ([]notifi
 		return nil, nil
 	}
 
+	groups := groupBySession(termEvents)
 	var sessions []time.Duration
-	sessionStart := termEvents[0].Timestamp
-	lastTS := termEvents[0].Timestamp
-
-	for i := 1; i < len(termEvents); i++ {
-		gap := termEvents[i].Timestamp.Sub(lastTS)
-		if gap > sessionGap {
-			sessions = append(sessions, lastTS.Sub(sessionStart))
-			sessionStart = termEvents[i].Timestamp
+	for _, events := range groups {
+		if len(events) < 2 {
+			continue
 		}
-		lastTS = termEvents[i].Timestamp
+		sessions = append(sessions, events[len(events)-1].Timestamp.Sub(events[0].Timestamp))
 	}
-	sessions = append(sessions, lastTS.Sub(sessionStart))
 
 	// Need at least 2 sessions to report meaningful boundaries.
 	if len(sessions) < 2 {
@@ -1094,6 +1088,43 @@ func (d *Detector) progressiveTier2(ctx context.Context, since time.Time) ([]not
 			filepath.Base(top[0].Path),
 		),
 	}}, nil
+}
+
+// --- Session grouping ------------------------------------------------------
+
+// groupBySession splits terminal events into per-session slices. When
+// session_id is present in the payload, events are grouped by that field.
+// Events without session_id are grouped using timestamp-gap clustering
+// (the existing 30-minute sessionGap heuristic). Returns a map of
+// session key → events (sorted by timestamp within each group).
+func groupBySession(events []event.Event) map[string][]event.Event {
+	groups := make(map[string][]event.Event)
+	var noSession []event.Event
+
+	for _, e := range events {
+		sid := event.SessionIDFromPayload(e.Payload)
+		if sid != "" {
+			groups[sid] = append(groups[sid], e)
+		} else {
+			noSession = append(noSession, e)
+		}
+	}
+
+	// Fallback: group events without session_id by timestamp gaps.
+	if len(noSession) > 0 {
+		gapIdx := 0
+		key := fmt.Sprintf("_ts_%d", gapIdx)
+		groups[key] = append(groups[key], noSession[0])
+		for i := 1; i < len(noSession); i++ {
+			if noSession[i].Timestamp.Sub(noSession[i-1].Timestamp) > sessionGap {
+				gapIdx++
+				key = fmt.Sprintf("_ts_%d", gapIdx)
+			}
+			groups[key] = append(groups[key], noSession[i])
+		}
+	}
+
+	return groups
 }
 
 // --- Payload helpers -------------------------------------------------------

@@ -2,6 +2,7 @@ package analyzer
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -42,6 +43,26 @@ func insertTerminal(t *testing.T, ctx context.Context, db interface {
 		Timestamp: ts,
 	}); err != nil {
 		t.Fatalf("insertTerminal %q: %v", cmd, err)
+	}
+}
+
+// insertTerminalSession inserts a terminal event with a session_id.
+func insertTerminalSession(t *testing.T, ctx context.Context, db interface {
+	InsertEvent(context.Context, event.Event) error
+}, cmd string, exitCode int, cwd string, ts time.Time, sessionID string) {
+	t.Helper()
+	if err := db.InsertEvent(ctx, event.Event{
+		Kind:   event.KindTerminal,
+		Source: "test",
+		Payload: map[string]any{
+			"cmd":        cmd,
+			"exit_code":  float64(exitCode),
+			"cwd":        cwd,
+			"session_id": sessionID,
+		},
+		Timestamp: ts,
+	}); err != nil {
+		t.Fatalf("insertTerminalSession %q: %v", cmd, err)
 	}
 }
 
@@ -363,6 +384,141 @@ func TestDetector_BuildFailureStreak_twoFailuresThenSuccess_noSuggestion(t *test
 
 	if hasSuggestionWithTitle(t, suggestions, "3 consecutive build/test failures") {
 		t.Error("expected no streak suggestion after streak was broken by success")
+	}
+}
+
+// --- BuildFailureStreak session-aware ---------------------------------------
+
+func TestDetector_BuildFailureStreak_perSessionStreaks(t *testing.T) {
+	db := openMemoryStore(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	// Session "A" has 3 consecutive failures (triggers suggestion).
+	// Session "B" has 2 failures then a success (no streak).
+	for i := range 3 {
+		insertTerminalSession(t, ctx, db, "go test ./...", 1, "/proj",
+			now.Add(-time.Duration(3-i)*5*time.Minute), "A")
+	}
+	insertTerminalSession(t, ctx, db, "go test ./...", 1, "/proj", now.Add(-15*time.Minute), "B")
+	insertTerminalSession(t, ctx, db, "go test ./...", 1, "/proj", now.Add(-10*time.Minute), "B")
+	insertTerminalSession(t, ctx, db, "go test ./...", 0, "/proj", now.Add(-5*time.Minute), "B")
+
+	det := NewDetector(db, newTestLogger())
+	suggestions, err := det.checkBuildFailureStreak(ctx, now.Add(-time.Hour))
+	if err != nil {
+		t.Fatalf("checkBuildFailureStreak: %v", err)
+	}
+
+	if !hasSuggestionWithTitle(t, suggestions, "3 consecutive build/test failures") {
+		t.Errorf("expected build failure streak from session A; got %+v", suggestions)
+	}
+}
+
+func TestDetector_BuildFailureStreak_crossSessionNotCounted(t *testing.T) {
+	db := openMemoryStore(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	// 2 failures in session A, 1 failure in session B — no 3-streak in either.
+	insertTerminalSession(t, ctx, db, "go test ./...", 1, "/proj", now.Add(-15*time.Minute), "A")
+	insertTerminalSession(t, ctx, db, "go test ./...", 1, "/proj", now.Add(-10*time.Minute), "A")
+	insertTerminalSession(t, ctx, db, "go test ./...", 1, "/proj", now.Add(-5*time.Minute), "B")
+
+	det := NewDetector(db, newTestLogger())
+	suggestions, err := det.checkBuildFailureStreak(ctx, now.Add(-time.Hour))
+	if err != nil {
+		t.Fatalf("checkBuildFailureStreak: %v", err)
+	}
+
+	if hasSuggestionWithTitle(t, suggestions, "3 consecutive build/test failures") {
+		t.Error("expected no streak suggestion when failures span different sessions")
+	}
+}
+
+// --- SessionLength session-aware --------------------------------------------
+
+func TestDetector_SessionLength_sessionIDGrouping(t *testing.T) {
+	db := openMemoryStore(t)
+	ctx := context.Background()
+
+	// Create 3 sessions via session_id, each ~90 minutes long.
+	// All events interleaved in time but with distinct session IDs.
+	base := time.Date(2026, 3, 1, 8, 0, 0, 0, time.UTC)
+	for session := range 3 {
+		sid := fmt.Sprintf("sess_%d", session)
+		sessionStart := base.Add(time.Duration(session) * 6 * time.Hour)
+		for i := range 10 {
+			insertTerminalSession(t, ctx, db, "vim main.go", 0, "/proj",
+				sessionStart.Add(time.Duration(i)*9*time.Minute), sid)
+		}
+	}
+
+	det := NewDetector(db, newTestLogger())
+	suggestions, err := det.checkSessionLength(ctx, base.Add(-time.Hour))
+	if err != nil {
+		t.Fatalf("checkSessionLength: %v", err)
+	}
+
+	if !hasSuggestionWithTitle(t, suggestions, "Long coding sessions") {
+		t.Errorf("expected session length suggestion with session IDs; got %+v", suggestions)
+	}
+}
+
+// --- IdleGaps session-aware -------------------------------------------------
+
+func TestDetector_IdleGaps_sessionIDGrouping(t *testing.T) {
+	db := openMemoryStore(t)
+	ctx := context.Background()
+
+	// Create 3 sessions via session_id.
+	base := time.Date(2026, 3, 1, 8, 0, 0, 0, time.UTC)
+	for session := range 3 {
+		sid := fmt.Sprintf("sess_%d", session)
+		sessionStart := base.Add(time.Duration(session) * 2 * time.Hour)
+		for i := range 5 {
+			insertTerminalSession(t, ctx, db, "vim main.go", 0, "/proj",
+				sessionStart.Add(time.Duration(i)*5*time.Minute), sid)
+		}
+	}
+
+	det := NewDetector(db, newTestLogger())
+	suggestions, err := det.checkIdleGaps(ctx, base.Add(-time.Hour))
+	if err != nil {
+		t.Fatalf("checkIdleGaps: %v", err)
+	}
+
+	if !hasSuggestionWithTitle(t, suggestions, "Work session summary") {
+		t.Errorf("expected idle gaps suggestion with session IDs; got %+v", suggestions)
+	}
+}
+
+// --- ContextSwitchFrequency session-aware -----------------------------------
+
+func TestDetector_ContextSwitchFrequency_perSessionSwitches(t *testing.T) {
+	db := openMemoryStore(t)
+	ctx := context.Background()
+
+	anchor := time.Now().Truncate(time.Hour).Add(30 * time.Minute)
+
+	// Session "A" has 8 distinct directory changes within one hour (above limit).
+	dirs := []string{"/a", "/b", "/c", "/d", "/e", "/f", "/g", "/h", "/i"}
+	for i, dir := range dirs {
+		insertTerminalSession(t, ctx, db, "ls", 0, dir,
+			anchor.Add(time.Duration(i)*time.Minute), "A")
+	}
+	// Session "B" has only 2 switches (below limit).
+	insertTerminalSession(t, ctx, db, "ls", 0, "/x", anchor, "B")
+	insertTerminalSession(t, ctx, db, "ls", 0, "/y", anchor.Add(time.Minute), "B")
+
+	det := NewDetector(db, newTestLogger())
+	suggestions, err := det.checkContextSwitchFrequency(ctx, anchor.Add(-time.Hour))
+	if err != nil {
+		t.Fatalf("checkContextSwitchFrequency: %v", err)
+	}
+
+	if !hasSuggestionWithTitle(t, suggestions, "High context-switching") {
+		t.Errorf("expected context-switch suggestion from session A; got %+v", suggestions)
 	}
 }
 
@@ -934,6 +1090,102 @@ func TestDetector_WindowContextSwitching_noEvents_noSuggestion(t *testing.T) {
 	if len(suggestions) != 0 {
 		t.Errorf("expected no suggestions with no events; got %+v", suggestions)
 	}
+}
+
+// --- groupBySession ---------------------------------------------------------
+
+func TestGroupBySession(t *testing.T) {
+	base := time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)
+
+	mkEvent := func(sid string, offset time.Duration) event.Event {
+		payload := map[string]any{"cmd": "ls", "exit_code": float64(0), "cwd": "/proj"}
+		if sid != "" {
+			payload["session_id"] = sid
+		}
+		return event.Event{
+			Kind:      event.KindTerminal,
+			Source:    "test",
+			Payload:   payload,
+			Timestamp: base.Add(offset),
+		}
+	}
+
+	tests := []struct {
+		name       string
+		events     []event.Event
+		wantGroups int
+	}{
+		{
+			name:       "empty_input",
+			events:     nil,
+			wantGroups: 0,
+		},
+		{
+			name: "all_events_have_session_id",
+			events: []event.Event{
+				mkEvent("100", 0),
+				mkEvent("100", time.Minute),
+				mkEvent("200", 2*time.Minute),
+				mkEvent("200", 3*time.Minute),
+			},
+			wantGroups: 2,
+		},
+		{
+			name: "no_events_have_session_id",
+			events: []event.Event{
+				mkEvent("", 0),
+				mkEvent("", time.Minute),
+				mkEvent("", time.Hour), // gap > 30min
+				mkEvent("", time.Hour+time.Minute),
+			},
+			wantGroups: 2,
+		},
+		{
+			name: "mixed_events",
+			events: []event.Event{
+				mkEvent("100", 0),
+				mkEvent("", 5*time.Minute),
+				mkEvent("100", 10*time.Minute),
+				mkEvent("", time.Hour), // gap > 30min from first no-session event
+			},
+			wantGroups: 3, // "100", "_ts_0", "_ts_1"
+		},
+		{
+			name: "single_session",
+			events: []event.Event{
+				mkEvent("42", 0),
+				mkEvent("42", time.Minute),
+				mkEvent("42", 2*time.Minute),
+			},
+			wantGroups: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			groups := groupBySession(tt.events)
+			if len(groups) != tt.wantGroups {
+				t.Errorf("groupBySession() returned %d groups, want %d; groups=%v",
+					len(groups), tt.wantGroups, groupKeys(groups))
+			}
+			// Verify all events are accounted for.
+			total := 0
+			for _, g := range groups {
+				total += len(g)
+			}
+			if total != len(tt.events) {
+				t.Errorf("total events in groups = %d, want %d", total, len(tt.events))
+			}
+		})
+	}
+}
+
+func groupKeys(groups map[string][]event.Event) []string {
+	keys := make([]string, 0, len(groups))
+	for k := range groups {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 // --- isTestOrBuildCmd -------------------------------------------------------

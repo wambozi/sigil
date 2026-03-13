@@ -38,42 +38,42 @@
 
 ### Phase 2: Analyzer session-aware grouping
 
-- [ ] **Task 2.1**: Add `groupBySession` helper to analyzer patterns
+- [x] **Task 2.1**: Add `groupBySession` helper to analyzer patterns
   - Files: `internal/analyzer/patterns.go`
   - Test: `go test -run TestGroupBySession ./internal/analyzer/`
   - Depends: Task 1.1
 
-- [ ] **Task 2.2**: Add tests for `groupBySession` (table-driven: with session ID, without, mixed, empty)
+- [x] **Task 2.2**: Add tests for `groupBySession` (table-driven: with session ID, without, mixed, empty)
   - Files: `internal/analyzer/patterns_test.go`
   - Test: `go test -run TestGroupBySession ./internal/analyzer/`
   - Depends: Task 2.1
 
-- [ ] **Task 2.3**: Update `checkBuildFailureStreak` to group by session
+- [x] **Task 2.3**: Update `checkBuildFailureStreak` to group by session
   - Files: `internal/analyzer/patterns.go`
   - Test: `go test -run TestBuildFailureStreak ./internal/analyzer/`
   - Depends: Task 2.1
 
-- [ ] [P] **Task 2.4**: Update `checkContextSwitchFrequency` to group by session
+- [x] [P] **Task 2.4**: Update `checkContextSwitchFrequency` to group by session
   - Files: `internal/analyzer/patterns.go`
   - Test: `go test -run TestContextSwitch ./internal/analyzer/`
   - Depends: Task 2.1
 
-- [ ] [P] **Task 2.5**: Update `checkSessionLength` to use session ID grouping with gap fallback
+- [x] [P] **Task 2.5**: Update `checkSessionLength` to use session ID grouping with gap fallback
   - Files: `internal/analyzer/patterns.go`
   - Test: `go test -run TestSessionLength ./internal/analyzer/`
   - Depends: Task 2.1
 
-- [ ] [P] **Task 2.6**: Update `checkIdleGaps` to use session ID grouping with gap fallback
+- [x] [P] **Task 2.6**: Update `checkIdleGaps` to use session ID grouping with gap fallback
   - Files: `internal/analyzer/patterns.go`
   - Test: `go test -run TestIdleGaps ./internal/analyzer/`
   - Depends: Task 2.1
 
-- [ ] **Task 2.7**: Add tests for session-aware pattern checks (per-session streaks, mixed events, backwards compat)
+- [x] **Task 2.7**: Add tests for session-aware pattern checks (per-session streaks, mixed events, backwards compat)
   - Files: `internal/analyzer/patterns_test.go`
   - Test: `go test ./internal/analyzer/`
   - Depends: Task 2.3, Task 2.4, Task 2.5, Task 2.6
 
-- [ ] **Task 2.8**: Phase 2 verification
+- [x] **Task 2.8**: Phase 2 verification
   - Test: `make check`
   - Depends: Task 2.7
 
