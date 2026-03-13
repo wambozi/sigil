@@ -1,0 +1,63 @@
+name: Bug Report
+description: Report a bug in sigild or sigilctl
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug.
+      placeholder: "When I run sigilctl status, it shows..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps to trigger the bug.
+      placeholder: |
+        1. Run `sigild init`
+        2. Start daemon with `sigild`
+        3. Run `sigilctl status`
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Sigil version
+      description: Output of `sigild --version` or git commit hash.
+      placeholder: "v0.1.0-alpha / d466394"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Linux (NixOS)
+        - Linux (Arch)
+        - Linux (Ubuntu/Debian)
+        - Linux (Fedora)
+        - Linux (other)
+        - macOS
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste any relevant daemon or CLI output.
+      render: text

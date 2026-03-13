@@ -113,3 +113,14 @@ TOML config at `$XDG_CONFIG_HOME/sigil/config.toml`. Sections: `daemon`, `notifi
 ## Fleet
 
 Optional telemetry aggregation (`internal/fleet/`). Computes anonymized hourly metrics, reports adoption tier, can receive routing policy from fleet endpoint. Opt-out clears queue and disables.
+
+## Community & Governance Files
+
+When making changes that affect the contributor experience — adding CI pipelines, changing build steps, modifying the DAG, adding new data collection, or changing quality gates — update these files as needed:
+
+- **`.github/pull_request_template.md`** — PR checklist items must reflect actual CI checks and quality gates (e.g. if you add a linter to CI, add it to the checklist)
+- **`.github/ISSUE_TEMPLATE/bug_report.yml`** — keep the version placeholder and OS dropdown current
+- **`.github/ISSUE_TEMPLATE/feature_request.yml`** — keep the component dropdown current if new subsystems are added
+- **`CONTRIBUTING.md`** — build instructions, code standards, and DAG diagram must match reality
+- **`SECURITY.md`** — update the security surface section if new network listeners, IPC mechanisms, or data stores are added
+- **`PRIVACY.md`** — update if new data is collected, stored, or transmitted
