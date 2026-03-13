@@ -34,7 +34,7 @@ run: build
 ## coverage runs tests with coverage and fails if internal/ drops below COV_MIN%.
 coverage:
 	@$(GO) test ./internal/... -coverprofile=coverage.out -covermode=atomic > /dev/null 2>&1
-	@total=$$($(GO) tool cover -func=coverage.out | awk '/^total:/ {gsub(/%/,"",$$NF); print $$NF}'); \
+	@total=$$($(GO) tool cover -func=cover.out | awk '/^total:/ {gsub(/%/,"",$$NF); print $$NF}'); \
 	echo "Internal coverage: $${total}% (minimum: $(COV_MIN)%)"; \
 	if [ $$(echo "$${total} < $(COV_MIN)" | bc -l) -eq 1 ]; then \
 		echo "FAIL: coverage $${total}% is below $(COV_MIN)% gate"; \
