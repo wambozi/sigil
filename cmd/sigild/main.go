@@ -27,6 +27,11 @@ import (
 	"syscall"
 	"time"
 
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/hex"
+
 	"github.com/wambozi/sigil/internal/actuator"
 	"github.com/wambozi/sigil/internal/analyzer"
 	"github.com/wambozi/sigil/internal/collector"
@@ -35,6 +40,7 @@ import (
 	"github.com/wambozi/sigil/internal/event"
 	"github.com/wambozi/sigil/internal/fleet"
 	"github.com/wambozi/sigil/internal/inference"
+	"github.com/wambozi/sigil/internal/network"
 	"github.com/wambozi/sigil/internal/notifier"
 	"github.com/wambozi/sigil/internal/socket"
 	"github.com/wambozi/sigil/internal/store"
@@ -305,6 +311,58 @@ func run(cfg daemonConfig, log *slog.Logger) error {
 		return fmt.Errorf("start socket: %w", err)
 	}
 	log.Info("socket listening", "path", cfg.socketPath)
+
+	// --- Credential store (always initialised; handlers registered below) ---
+	credStore := network.NewCredentialStore()
+	credsPath := filepath.Join(networkDataDir(), "credentials.json")
+	if err := credStore.LoadFromFile(credsPath); err != nil {
+		log.Warn("credential store: load failed — starting empty", "err", err)
+	}
+
+	// --- Optional TCP+TLS listener ------------------------------------------
+	var tlsCert *tls.Certificate
+	var spki string
+	if cfg.fileCfg.Network.Enabled {
+		netDir := networkDataDir()
+		cert, err := network.LoadOrGenerate(netDir)
+		if err != nil {
+			return fmt.Errorf("network: TLS cert: %w", err)
+		}
+		tlsCert = &cert
+
+		leaf, err := x509.ParseCertificate(cert.Certificate[0])
+		if err != nil {
+			return fmt.Errorf("network: parse cert: %w", err)
+		}
+		spki = network.SPKIFingerprint(leaf)
+
+		bind := cfg.fileCfg.Network.Bind
+		if bind == "" {
+			bind = "0.0.0.0"
+		}
+		port := cfg.fileCfg.Network.Port
+		if port == 0 {
+			port = 7773
+		}
+		addr := fmt.Sprintf("%s:%d", bind, port)
+
+		tlsCfg := &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			MinVersion:   tls.VersionTLS13,
+		}
+		ln, err := tls.Listen("tcp", addr, tlsCfg)
+		if err != nil {
+			return fmt.Errorf("network: listen %s: %w", addr, err)
+		}
+		authLn := network.NewAuthListener(ln, credStore)
+		if err := srv.ServeListener(ctx, authLn); err != nil {
+			return fmt.Errorf("network: serve: %w", err)
+		}
+		log.Info("network listener started", "addr", addr, "spki", spki)
+	}
+
+	// --- Credential socket handlers (Unix socket only) ----------------------
+	registerCredentialHandlers(srv, credStore, credsPath, tlsCert, spki, cfg.fileCfg.Network, log)
 
 	// --- Wait for shutdown --------------------------------------------------
 	<-ctx.Done()
@@ -942,6 +1000,122 @@ func splitPaths(s string) []string {
 		}
 	}
 	return out
+}
+
+// --- Network data directory -------------------------------------------------
+
+func networkDataDir() string {
+	base := os.Getenv("XDG_DATA_HOME")
+	if base == "" {
+		base = filepath.Join(homeDir(), ".local", "share")
+	}
+	return filepath.Join(base, "sigil")
+}
+
+// --- Credential socket handlers (Unix socket only) --------------------------
+
+func registerCredentialHandlers(
+	srv *socket.Server,
+	store *network.CredentialStore,
+	credsPath string,
+	tlsCert *tls.Certificate,
+	spki string,
+	netCfg config.NetworkConfig,
+	log *slog.Logger,
+) {
+	// credential.add — generate a new token and return the credential bundle.
+	srv.Handle("credential.add", func(ctx context.Context, req socket.Request) socket.Response {
+		var p struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(req.Payload, &p); err != nil || p.ID == "" {
+			return socket.Response{Error: "payload must be {\"id\":\"...\"}"}
+		}
+
+		token, err := generateToken()
+		if err != nil {
+			return socket.Response{Error: fmt.Sprintf("generate token: %s", err)}
+		}
+
+		if err := store.Add(p.ID, token); err != nil {
+			return socket.Response{Error: err.Error()}
+		}
+		if err := store.SaveToFile(credsPath); err != nil {
+			log.Warn("credential.add: save failed", "err", err)
+		}
+
+		bind := netCfg.Bind
+		if bind == "" {
+			bind = "0.0.0.0"
+		}
+		port := netCfg.Port
+		if port == 0 {
+			port = 7773
+		}
+		serverAddr := fmt.Sprintf("%s:%d", bind, port)
+
+		bundle := map[string]any{
+			"id":               p.ID,
+			"token":            token,
+			"server_addr":      serverAddr,
+			"server_cert_spki": spki,
+			"generated_at":     time.Now().UTC().Format(time.RFC3339),
+		}
+		return socket.Response{OK: true, Payload: socket.MarshalPayload(bundle)}
+	})
+
+	// credential.list — return all credentials without token values.
+	srv.Handle("credential.list", func(ctx context.Context, _ socket.Request) socket.Response {
+		creds := store.List()
+		type item struct {
+			ID        string  `json:"id"`
+			CreatedAt string  `json:"created_at"`
+			Revoked   bool    `json:"revoked"`
+			RevokedAt *string `json:"revoked_at,omitempty"`
+		}
+		out := make([]item, 0, len(creds))
+		for _, c := range creds {
+			i := item{
+				ID:        c.ID,
+				CreatedAt: c.CreatedAt.UTC().Format(time.RFC3339),
+				Revoked:   c.Revoked,
+			}
+			if c.RevokedAt != nil {
+				s := c.RevokedAt.UTC().Format(time.RFC3339)
+				i.RevokedAt = &s
+			}
+			out = append(out, i)
+		}
+		return socket.Response{OK: true, Payload: socket.MarshalPayload(map[string]any{"credentials": out})}
+	})
+
+	// credential.revoke — revoke by id.
+	srv.Handle("credential.revoke", func(ctx context.Context, req socket.Request) socket.Response {
+		var p struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(req.Payload, &p); err != nil || p.ID == "" {
+			return socket.Response{Error: "payload must be {\"id\":\"...\"}"}
+		}
+		if err := store.Revoke(p.ID); err != nil {
+			return socket.Response{Error: err.Error()}
+		}
+		if err := store.SaveToFile(credsPath); err != nil {
+			log.Warn("credential.revoke: save failed", "err", err)
+		}
+		return socket.Response{OK: true, Payload: socket.MarshalPayload(map[string]any{"revoked": true})}
+	})
+
+	_ = tlsCert // reserved for session management in a future version
+}
+
+// generateToken returns a "sghl_" prefixed token with 40 hex chars of entropy.
+func generateToken() (string, error) {
+	b := make([]byte, 20)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return "sghl_" + hex.EncodeToString(b), nil
 }
 
 // --- Fleet socket handlers --------------------------------------------------

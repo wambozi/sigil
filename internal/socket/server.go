@@ -117,6 +117,16 @@ func (s *Server) Start(ctx context.Context) error {
 	return nil
 }
 
+// ServeListener starts accepting connections from ln and dispatching them
+// using the same logic as Start.  Unlike Start, it does not create its own
+// listener — the caller is responsible for binding and any pre-accept
+// wrapping (e.g. TLS, auth).  The accept loop runs in a background goroutine;
+// ServeListener returns immediately.
+func (s *Server) ServeListener(ctx context.Context, ln net.Listener) error {
+	go s.acceptLoop(ctx, ln)
+	return nil
+}
+
 // Stop closes the listener, causing the accept loop to exit.
 func (s *Server) Stop() {
 	s.mu.Lock()

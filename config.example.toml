@@ -50,3 +50,13 @@ digest_time = "09:00"
 [socket]
 # Unix socket path. Default: $XDG_RUNTIME_DIR/sigild.sock
 # socket_path = "/run/user/1000/sigild.sock"
+
+[network]
+# Enable the optional TCP+TLS listener for remote sigil-shell connections.
+# Disabled by default. When enabled, generates a self-signed TLS cert on
+# first start at $XDG_DATA_HOME/sigil/server-cert.pem.
+enabled = false
+# bind = "0.0.0.0"          # IP address to listen on (default: all interfaces)
+# port = 7773                # TCP port (default: 7773)
+# allowed_credentials = []   # Optional allowlist of credential IDs.
+                              # Empty = all valid (non-revoked) tokens accepted.

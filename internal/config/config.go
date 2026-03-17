@@ -21,6 +21,15 @@ type Config struct {
 	Inference InferenceConfig `toml:"inference"`
 	Retention RetentionConfig `toml:"retention"`
 	Fleet     FleetConfig     `toml:"fleet"`
+	Network   NetworkConfig   `toml:"network"`
+}
+
+// NetworkConfig controls the optional TCP listener.
+type NetworkConfig struct {
+	Enabled            bool     `toml:"enabled"`
+	Bind               string   `toml:"bind"`
+	Port               int      `toml:"port"`
+	AllowedCredentials []string `toml:"allowed_credentials"`
 }
 
 // DaemonConfig covers process-level settings.
@@ -230,6 +239,19 @@ func merge(dst, src *Config) {
 	}
 	if src.Fleet.NodeID != "" {
 		dst.Fleet.NodeID = src.Fleet.NodeID
+	}
+
+	if src.Network.Enabled {
+		dst.Network.Enabled = true
+	}
+	if src.Network.Bind != "" {
+		dst.Network.Bind = src.Network.Bind
+	}
+	if src.Network.Port != 0 {
+		dst.Network.Port = src.Network.Port
+	}
+	if len(src.Network.AllowedCredentials) > 0 {
+		dst.Network.AllowedCredentials = src.Network.AllowedCredentials
 	}
 }
 

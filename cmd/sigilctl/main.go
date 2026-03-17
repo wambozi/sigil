@@ -92,6 +92,8 @@ func run() error {
 		return cmdSessions(*socketPath)
 	case "fleet":
 		return cmdFleet(*socketPath, args)
+	case "credential":
+		return cmdCredential(*socketPath, args)
 	default:
 		return fmt.Errorf("unknown command %q — run sigilctl -help", cmd)
 	}
@@ -793,6 +795,110 @@ func cmdFleetOptOut(socketPath string) error {
 	return nil
 }
 
+// cmdCredential dispatches credential subcommands: add, list, revoke.
+func cmdCredential(socketPath string, args []string) error {
+	if len(args) == 0 {
+		fmt.Println("Usage: sigilctl credential <add|list|revoke> [name]")
+		return nil
+	}
+	switch args[0] {
+	case "add":
+		return cmdCredentialAdd(socketPath, args[1:])
+	case "list":
+		return cmdCredentialList(socketPath)
+	case "revoke":
+		return cmdCredentialRevoke(socketPath, args[1:])
+	default:
+		return fmt.Errorf("unknown credential command %q — use add, list, or revoke", args[0])
+	}
+}
+
+func cmdCredentialAdd(socketPath string, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: sigilctl credential add <name>")
+	}
+	id := args[0]
+
+	resp, err := call(socketPath, "credential.add", map[string]any{"id": id})
+	if err != nil {
+		return err
+	}
+	if !resp.OK {
+		return fmt.Errorf("daemon error: %s", resp.Error)
+	}
+
+	var bundle map[string]any
+	if err := json.Unmarshal(resp.Payload, &bundle); err != nil {
+		return fmt.Errorf("decode response: %w", err)
+	}
+
+	// Pretty-print the credential bundle JSON.
+	out, _ := json.MarshalIndent(bundle, "", "  ")
+	fmt.Println(string(out))
+	fmt.Fprintln(os.Stderr, "\n⚠  Keep this credential secret — it contains a plaintext bearer token.")
+	return nil
+}
+
+func cmdCredentialList(socketPath string) error {
+	resp, err := call(socketPath, "credential.list", nil)
+	if err != nil {
+		return err
+	}
+	if !resp.OK {
+		return fmt.Errorf("daemon error: %s", resp.Error)
+	}
+
+	var payload struct {
+		Credentials []struct {
+			ID        string `json:"id"`
+			CreatedAt string `json:"created_at"`
+			Revoked   bool   `json:"revoked"`
+		} `json:"credentials"`
+	}
+	if err := json.Unmarshal(resp.Payload, &payload); err != nil {
+		return fmt.Errorf("decode response: %w", err)
+	}
+
+	if len(payload.Credentials) == 0 {
+		fmt.Println("No credentials.")
+		return nil
+	}
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "ID\tCREATED\tREVOKED")
+	for _, c := range payload.Credentials {
+		revoked := "no"
+		if c.Revoked {
+			revoked = "yes"
+		}
+		// Parse and reformat the timestamp for readability.
+		created := c.CreatedAt
+		if t, err := time.Parse(time.RFC3339, c.CreatedAt); err == nil {
+			created = t.UTC().Format("2006-01-02 15:04")
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\n", c.ID, created, revoked)
+	}
+	return w.Flush()
+}
+
+func cmdCredentialRevoke(socketPath string, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: sigilctl credential revoke <name>")
+	}
+	id := args[0]
+
+	resp, err := call(socketPath, "credential.revoke", map[string]any{"id": id})
+	if err != nil {
+		return err
+	}
+	if !resp.OK {
+		return fmt.Errorf("daemon error: %s", resp.Error)
+	}
+
+	fmt.Printf("Credential %q revoked. Delete the credential file on the remote host.\n", id)
+	return nil
+}
+
 func printUsage() {
 	fmt.Print(`sigilctl — Sigil OS daemon CLI
 
@@ -819,6 +925,9 @@ Commands:
   fleet status                  Show fleet reporting opt-in status
   fleet preview                 Show what fleet data will be sent
   fleet opt-out                 Disable fleet reporting
+  credential add <name>         Generate a new remote-access credential
+  credential list               List all credentials
+  credential revoke <name>      Revoke a credential immediately
   purge                         Delete all local data (requires confirmation)
   export                        Export all data as newline-delimited JSON
 
