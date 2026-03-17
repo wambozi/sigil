@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/wambozi/sigil/internal/assets"
 	"github.com/wambozi/sigil/internal/config"
 	"github.com/wambozi/sigil/internal/inference"
 )
@@ -112,31 +113,17 @@ func installShellHook(home string) error {
 	return nil
 }
 
-// copyEmbeddedHook copies a hook from the installed scripts location to dst.
-// It tries the executable directory first, then falls back to the repo root.
+// copyEmbeddedHook writes a shell hook from the embedded asset FS to dst.
 func copyEmbeddedHook(name, dst string) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 		return err
 	}
 
-	// Try to locate the hook relative to the running binary.
-	exe, _ := os.Executable()
-	candidates := []string{
-		filepath.Join(filepath.Dir(exe), "..", "scripts", name),
-		filepath.Join("/usr/local/share/sigil/scripts", name),
-		filepath.Join(filepath.Dir(exe), "..", "..", "scripts", name),
+	data, err := assets.FS.ReadFile("scripts/" + name)
+	if err != nil {
+		return fmt.Errorf("embedded asset scripts/%s: %w", name, err)
 	}
-
-	for _, src := range candidates {
-		data, err := os.ReadFile(src)
-		if err != nil {
-			continue
-		}
-		return os.WriteFile(dst, data, 0o644)
-	}
-	// Hook file not found — not fatal, just skip.
-	fmt.Printf("  [skip] %s not found (install manually to %s)\n", name, dst)
-	return nil
+	return os.WriteFile(dst, data, 0o644)
 }
 
 // promptYN asks a yes/no question and returns true for yes.
@@ -319,28 +306,9 @@ func installSystemdService(home string) error {
 	}
 	dst := filepath.Join(unitDir, "sigild.service")
 
-	// Locate the bundled service file.
-	exe, _ := os.Executable()
-	candidates := []string{
-		filepath.Join(filepath.Dir(exe), "..", "deploy", "sigild.service"),
-		filepath.Join(filepath.Dir(exe), "..", "..", "deploy", "sigild.service"),
-		"/usr/local/share/sigil/sigild.service",
-	}
-	var src string
-	for _, c := range candidates {
-		if _, err := os.Stat(c); err == nil {
-			src = c
-			break
-		}
-	}
-	if src == "" {
-		fmt.Println("  [skip] sigild.service not found — copy deploy/sigild.service manually")
-		return nil
-	}
-
-	data, err := os.ReadFile(src)
+	data, err := assets.FS.ReadFile("deploy/sigild.service")
 	if err != nil {
-		return fmt.Errorf("read service file: %w", err)
+		return fmt.Errorf("embedded asset deploy/sigild.service: %w", err)
 	}
 	if err := os.WriteFile(dst, data, 0o644); err != nil {
 		return fmt.Errorf("write service file: %w", err)
