@@ -37,8 +37,8 @@ type FileSource struct {
 // Keeps the daemon well under the typical macOS fd limit (10240).
 const DefaultMaxWatches = 4096
 
-// defaultIgnorePatterns covers directories that generate massive inotify noise
-// with no useful workflow signal.
+// defaultIgnorePatterns covers directories that generate massive inotify/kqueue
+// noise with no useful workflow signal.
 var defaultIgnorePatterns = []string{
 	".git",
 	"node_modules",
@@ -48,10 +48,34 @@ var defaultIgnorePatterns = []string{
 	"dist",
 	".cache",
 	".venv",
+	"venv",
 	"target", // Rust/Maven
 	"build",  // Gradle/generic
 	".nix-profile",
 	"result", // Nix build output symlink
+	// Package manager caches
+	".bun",
+	".npm",
+	".yarn",
+	".cargo",
+	".rustup",
+	// System directories (macOS)
+	".Trash",
+	"Library",
+	".local",
+	// IDE metadata
+	".idea",
+	".vscode",
+}
+
+// defaultIgnoreBasenames are file names (not directories) that should be
+// ignored regardless of their location.  Checked via filepath.Base match.
+var defaultIgnoreBasenames = map[string]bool{
+	".DS_Store":     true,
+	".localized":    true,
+	".zsh_history":  true,
+	".bash_history": true,
+	".claude.json":  true,
 }
 
 func (s *FileSource) Name() string { return "files" }
@@ -178,8 +202,14 @@ func (s *FileSource) walkAndWatch(w *fsnotify.Watcher, root string, current int)
 	return count, err
 }
 
-// shouldIgnore returns true if any ignore pattern appears as a path component.
+// shouldIgnore returns true if any ignore pattern appears as a path component
+// or the file's basename matches a known noise file.
 func (s *FileSource) shouldIgnore(path string) bool {
+	// Check basename against known noise files.
+	if defaultIgnoreBasenames[filepath.Base(path)] {
+		return true
+	}
+	// Check directory components against ignore patterns.
 	for _, pat := range s.IgnorePatterns {
 		if strings.Contains(path, string(filepath.Separator)+pat+string(filepath.Separator)) ||
 			strings.HasSuffix(path, string(filepath.Separator)+pat) {

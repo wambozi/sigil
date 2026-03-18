@@ -11,7 +11,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"flag"
@@ -204,7 +203,7 @@ func run(cfg daemonConfig, log *slog.Logger) error {
 	terminalSrc := sources.NewTerminalSource()
 
 	col := collector.New(db, log)
-	col.Add(&sources.FileSource{Paths: cfg.watchPaths, MaxWatches: cfg.maxWatches})
+	col.Add(&sources.FileSource{Paths: cfg.watchPaths, IgnorePatterns: cfg.fileCfg.Daemon.IgnorePatterns, MaxWatches: cfg.maxWatches})
 	col.Add(&sources.ProcessSource{})
 	col.Add(&sources.GitSource{RepoPaths: cfg.repoPaths})
 	col.Add(terminalSrc)
@@ -870,37 +869,7 @@ func runRSSMonitor(ctx context.Context, log *slog.Logger, current *atomic.Int64)
 	}
 }
 
-// readRSSMB returns the current process RSS in megabytes by parsing
-// /proc/self/status.  Returns an error if the file cannot be read or parsed.
-func readRSSMB() (int64, error) {
-	f, err := os.Open("/proc/self/status")
-	if err != nil {
-		return 0, fmt.Errorf("open /proc/self/status: %w", err)
-	}
-	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "VmRSS:") {
-			continue
-		}
-		// Format: "VmRSS:   12345 kB"
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			break
-		}
-		kb, err := strconv.ParseInt(fields[1], 10, 64)
-		if err != nil {
-			return 0, fmt.Errorf("parse VmRSS: %w", err)
-		}
-		return kb / 1024, nil
-	}
-	if err := scanner.Err(); err != nil {
-		return 0, fmt.Errorf("scan /proc/self/status: %w", err)
-	}
-	return 0, fmt.Errorf("VmRSS not found in /proc/self/status")
-}
+// readRSSMB is implemented in rss_linux.go and rss_darwin.go.
 
 // --- Daily digest scheduler -------------------------------------------------
 

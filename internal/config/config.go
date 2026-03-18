@@ -37,6 +37,7 @@ type DaemonConfig struct {
 	LogLevel          string   `toml:"log_level"`
 	WatchDirs         []string `toml:"watch_dirs"`
 	RepoDirs          []string `toml:"repo_dirs"`
+	IgnorePatterns    []string `toml:"ignore_patterns"`
 	DBPath            string   `toml:"db_path"`
 	SocketPath        string   `toml:"socket_path"`
 	MaxWatches        int      `toml:"max_watches"`        // cap on watched directories (0 = default 4096)
@@ -171,6 +172,9 @@ func merge(dst, src *Config) {
 	}
 	if len(src.Daemon.RepoDirs) > 0 {
 		dst.Daemon.RepoDirs = expandDirs(src.Daemon.RepoDirs)
+	}
+	if len(src.Daemon.IgnorePatterns) > 0 {
+		dst.Daemon.IgnorePatterns = src.Daemon.IgnorePatterns
 	}
 	if src.Daemon.DBPath != "" {
 		dst.Daemon.DBPath = expandHome(src.Daemon.DBPath)

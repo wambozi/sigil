@@ -28,7 +28,7 @@ _sigild_prompt_cmd() {
         "$_cwd_json" \
         "$(date +%s)" \
         "$_SIGILD_SESSION_ID" \
-        | nc -U -w0 "$_sock" 2>/dev/null &
+        | nc -U -w1 "$_sock" 2>/dev/null &
 }
 
 # Prepend to PROMPT_COMMAND without clobbering existing entries

@@ -2,17 +2,23 @@
 # sigil shell hook — source this from ~/.zshrc
 # Added automatically by: sigild init
 #
-# Sends each executed command to sigild via Unix socket (non-blocking).
+# Uses preexec to capture the command text and precmd to send it with the
+# exit code.  This avoids the fc/history timing issues that cause missed
+# commands on macOS with oh-my-zsh and SHARE_HISTORY.
 # Adds < 1ms latency to every prompt redraw.
 
 _SIGILD_SESSION_ID="$$"
+_SIGILD_LAST_CMD=""
+
+_sigild_preexec() {
+    _SIGILD_LAST_CMD="$1"
+}
 
 _sigild_precmd() {
     local _sigild_exit=$?
-    local _sigild_cmd
-    _sigild_cmd="$(fc -ln -1 2>/dev/null)"
-    _sigild_cmd="${_sigild_cmd##[[:space:]]}"
-    [[ -z "$_sigild_cmd" ]] && return 0
+    [[ -z "$_SIGILD_LAST_CMD" ]] && return 0
+    local _sigild_cmd="$_SIGILD_LAST_CMD"
+    _SIGILD_LAST_CMD=""
 
     local _sigild_runtime="${XDG_RUNTIME_DIR:-${TMPDIR:-/run/user/$(id -u)}}"
     local _sigild_sock="${_sigild_runtime}/sigild.sock"
@@ -30,10 +36,13 @@ _sigild_precmd() {
         "$_sigild_cwd_json" \
         "$(date +%s)" \
         "$_SIGILD_SESSION_ID" \
-        | nc -U -w0 "$_sigild_sock" 2>/dev/null &
+        | nc -U -w1 "$_sigild_sock" 2>/dev/null &
 }
 
 # Guard against double-registration
+if (( ${preexec_functions[(I)_sigild_preexec]} == 0 )); then
+    preexec_functions+=(_sigild_preexec)
+fi
 if (( ${precmd_functions[(I)_sigild_precmd]} == 0 )); then
     precmd_functions+=(_sigild_precmd)
 fi

@@ -2,6 +2,16 @@
 # Copy to ~/.config/sigil/config.toml and edit as needed.
 # All paths support ~ expansion.
 
+[daemon]
+log_level = "info"
+# Directories to watch for file-system events.
+# watch_dirs = ["~/code"]
+# Git repository roots to poll for activity.
+# repo_dirs = ["~/code/my-project"]
+# Patterns to ignore (matched against path components).
+# Overrides the built-in defaults when set.
+# ignore_patterns = [".git", "node_modules", "vendor", "__pycache__", ".next", "dist", ".cache", ".venv", ".bun", ".npm", ".idea", ".vscode", ".Trash", "Library"]
+
 [notifier]
 # 0 = silent (store only, query via sigilctl)
 # 1 = digest (one daily summary at digest_time)
@@ -9,12 +19,7 @@
 # 3 = conversational (toasts with action buttons)
 # 4 = autonomous (auto-execute high-confidence actions)
 level = 2
-
-[collector]
-# Directories to watch for file-system events.
-watch_dirs = ["~/code"]
-# Patterns to ignore (matched against full path).
-ignore_patterns = [".git", "node_modules", "vendor", "__pycache__", ".next", "dist"]
+digest_time = "09:00"
 
 [inference]
 # Routing mode: local | localfirst | remotefirst | remote
@@ -37,19 +42,8 @@ enabled = false
 # api_key = ""
 # model = ""
 
-[schedule]
-# How often to run a full analysis cycle.
-analyze_every = "1h"
-# Time to deliver the daily digest (level 1 only). 24h format, local time.
-digest_time = "09:00"
-
-[store]
-# SQLite database path. Default: $XDG_DATA_HOME/sigild/data.db
-# db_path = "~/.local/share/sigild/data.db"
-
-[socket]
-# Unix socket path. Default: $XDG_RUNTIME_DIR/sigild.sock
-# socket_path = "/run/user/1000/sigild.sock"
+[retention]
+raw_event_days = 90
 
 [network]
 # Enable the optional TCP+TLS listener for remote sigil-shell connections.

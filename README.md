@@ -57,8 +57,19 @@ something useful.
 
 ## Install
 
+### Homebrew (macOS / Linux)
+
 ```bash
-# One-line install (downloads the latest release binary)
+brew tap wambozi/sigil
+brew install sigil
+sigild init     # config, shell hooks, launchd (macOS) / systemd (Linux)
+```
+
+After init, open a new terminal to activate the shell hook.
+
+### One-line install
+
+```bash
 curl -fsSL https://raw.githubusercontent.com/wambozi/sigil/main/scripts/install.sh | bash
 ```
 
@@ -69,7 +80,7 @@ Requires Go 1.22+.
 ```bash
 git clone https://github.com/wambozi/sigil.git && cd sigil
 make install    # builds, installs to $GOPATH/bin, prints next step
-sigild init     # config, shell hooks, systemd service (Linux)
+sigild init     # config, shell hooks, launchd (macOS) / systemd (Linux)
 ```
 
 > **Note:** make sure `$GOPATH/bin` (usually `~/go/bin`) is in your `PATH`.
