@@ -255,6 +255,11 @@ func run(cfg daemonConfig, log *slog.Logger) error {
 	}
 	defer mlEngine.Close()
 
+	// Wire ML into the task tracker for predictions and retraining.
+	if mlEngine.Enabled() {
+		taskTracker.SetMLEngine(&mlEngineAdapter{mlEngine}, cfg.dbPath, cfg.fileCfg.ML.RetrainEvery)
+	}
+
 	// --- Notifier -----------------------------------------------------------
 	ntf := notifier.New(db, notifier.Level(cfg.notifierLevel), log)
 	log.Info("notifier started", "level", cfg.notifierLevel)
@@ -1110,6 +1115,30 @@ func registerMLHandlers(srv *socket.Server, engine *ml.Engine, dbPath string) {
 		}
 		return socket.Response{OK: true, Payload: socket.MarshalPayload(pred)}
 	})
+}
+
+// --- ML adapter for task tracker -------------------------------------------
+
+// mlEngineAdapter wraps ml.Engine to satisfy task.MLPredictor.
+type mlEngineAdapter struct {
+	engine *ml.Engine
+}
+
+func (a *mlEngineAdapter) Predict(ctx context.Context, endpoint string, features map[string]any) (map[string]any, error) {
+	pred, err := a.engine.Predict(ctx, endpoint, features)
+	if err != nil {
+		return nil, err
+	}
+	return pred.Result, nil
+}
+
+func (a *mlEngineAdapter) Train(ctx context.Context, dbPath string) error {
+	_, err := a.engine.Train(ctx, dbPath)
+	return err
+}
+
+func (a *mlEngineAdapter) Enabled() bool {
+	return a.engine.Enabled()
 }
 
 // --- RSS monitor ------------------------------------------------------------

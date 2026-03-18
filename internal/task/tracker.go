@@ -23,6 +23,14 @@ const (
 	stuckThreshold = 3
 )
 
+// MLPredictor is an optional interface for ML-powered predictions.
+// The ml.Engine satisfies this interface when passed via SetMLEngine.
+type MLPredictor interface {
+	Predict(ctx context.Context, endpoint string, features map[string]any) (map[string]any, error)
+	Train(ctx context.Context, dbPath string) error
+	Enabled() bool
+}
+
 // Tracker maintains the current task state and processes events in real time.
 // It runs an event loop reading from a broadcast channel and updates the
 // store on every phase transition.
@@ -33,7 +41,11 @@ type Tracker struct {
 	mu      sync.Mutex
 	current *Task
 
-	idleTimer *time.Timer
+	idleTimer      *time.Timer
+	mlPredictor    MLPredictor
+	dbPath         string
+	retrainEvery   int // retrain after N completed tasks (0 = disabled)
+	completedCount int // tasks completed since last retrain
 }
 
 // NewTracker creates a Tracker backed by the given store.
@@ -42,6 +54,15 @@ func NewTracker(s store.ReadWriter, log *slog.Logger) *Tracker {
 		store: s,
 		log:   log,
 	}
+}
+
+// SetMLEngine configures the ML prediction backend.
+func (t *Tracker) SetMLEngine(predictor MLPredictor, dbPath string, retrainEvery int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.mlPredictor = predictor
+	t.dbPath = dbPath
+	t.retrainEvery = retrainEvery
 }
 
 // Restore loads the current task from the store so the tracker survives
@@ -147,6 +168,16 @@ func (t *Tracker) Process(ctx context.Context, e event.Event) {
 		newPhase = PhaseStuck
 	}
 
+	// ML-enhanced stuck prediction: if we're in verifying and ML predicts
+	// stuck with high probability, escalate early (before heuristic threshold).
+	if newPhase == PhaseVerifying && t.current.TestFailures > 0 && t.mlPredictor != nil && t.mlPredictor.Enabled() {
+		stuckProb := t.predictStuck(ctx)
+		if stuckProb > 0.7 {
+			t.log.Info("ml: early stuck prediction", "probability", stuckProb)
+			newPhase = PhaseStuck
+		}
+	}
+
 	t.current.Phase = newPhase
 	t.current.LastActivity = now
 
@@ -207,6 +238,7 @@ func (t *Tracker) startTask(ctx context.Context, repo string, now time.Time) {
 }
 
 // completeCurrentTask marks the current task as completed and persists it.
+// If ML is enabled and enough tasks have completed, triggers retraining.
 func (t *Tracker) completeCurrentTask(ctx context.Context, now time.Time) {
 	if t.current == nil {
 		return
@@ -216,6 +248,20 @@ func (t *Tracker) completeCurrentTask(ctx context.Context, now time.Time) {
 	t.persist(ctx)
 	t.log.Info("task completed", "id", t.current.ID, "commits", t.current.CommitCount, "files", len(t.current.FilesTouched))
 	t.current = nil
+
+	// Trigger ML retraining after N completed tasks.
+	t.completedCount++
+	if t.retrainEvery > 0 && t.mlPredictor != nil && t.mlPredictor.Enabled() && t.completedCount >= t.retrainEvery {
+		t.completedCount = 0
+		go func() {
+			t.log.Info("ml: triggering retraining", "db", t.dbPath)
+			if err := t.mlPredictor.Train(ctx, t.dbPath); err != nil {
+				t.log.Warn("ml: retraining failed", "err", err)
+			} else {
+				t.log.Info("ml: retraining complete")
+			}
+		}()
+	}
 }
 
 // persist writes the current task to the store.
@@ -231,6 +277,46 @@ func (t *Tracker) persist(ctx context.Context) {
 			t.log.Error("task tracker: persist", "err", err)
 		}
 	}
+}
+
+// predictStuck queries the ML engine for stuck probability based on current task state.
+// Returns 0.0 on any error (fail-open: heuristics still apply).
+func (t *Tracker) predictStuck(ctx context.Context) float64 {
+	if t.current == nil || t.mlPredictor == nil {
+		return 0
+	}
+	elapsed := time.Since(t.current.StartedAt).Seconds()
+	totalEdits := 0
+	for _, n := range t.current.FilesTouched {
+		totalEdits += n
+	}
+	editVelocity := 0.0
+	if elapsed > 0 {
+		editVelocity = float64(totalEdits) / (elapsed / 60)
+	}
+	fileSwitchRate := 0.0
+	if totalEdits > 0 {
+		fileSwitchRate = float64(len(t.current.FilesTouched)) / float64(totalEdits)
+	}
+
+	features := map[string]any{
+		"test_failure_count":        t.current.TestFailures,
+		"time_in_phase_sec":         time.Since(t.current.LastActivity).Seconds(),
+		"edit_velocity":             editVelocity,
+		"file_switch_rate":          fileSwitchRate,
+		"session_length_sec":        elapsed,
+		"time_since_last_commit_sec": elapsed, // approximate
+	}
+
+	result, err := t.mlPredictor.Predict(ctx, "stuck", features)
+	if err != nil {
+		t.log.Debug("ml: stuck prediction failed", "err", err)
+		return 0
+	}
+	if prob, ok := result["probability"].(float64); ok {
+		return prob
+	}
+	return 0
 }
 
 // resetIdleTimer resets the idle timeout.  If no signal arrives within

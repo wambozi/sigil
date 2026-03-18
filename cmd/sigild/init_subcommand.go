@@ -41,20 +41,23 @@ func runInit() error {
 	// 3. Inference setup
 	inferenceToml := setupInference(reader)
 
-	// 4. Fleet setup
+	// 4. ML setup
+	mlToml := setupML(reader)
+
+	// 5. Fleet setup
 	fleetToml := setupFleet(reader)
 
-	// 5. Config file
-	if err := installConfigFile(watchDirs, repoDirs, inferenceToml, fleetToml); err != nil {
+	// 6. Config file
+	if err := installConfigFile(watchDirs, repoDirs, inferenceToml, mlToml, fleetToml); err != nil {
 		fmt.Fprintf(os.Stderr, "  [warn] config: %v\n", err)
 	}
 
-	// 6. Data directory
+	// 7. Data directory
 	if err := installDataDir(home); err != nil {
 		fmt.Fprintf(os.Stderr, "  [warn] data dir: %v\n", err)
 	}
 
-	// 7. System service (platform-specific auto-start)
+	// 8. System service (platform-specific auto-start)
 	switch runtime.GOOS {
 	case "linux":
 		if err := installSystemdService(home); err != nil {
@@ -358,6 +361,55 @@ func setupInference(reader *bufio.Reader) string {
 }
 
 // setupFleet prompts the user about fleet reporting.
+// setupML prompts the user about ML prediction sidecar.
+func setupML(reader *bufio.Reader) string {
+	fmt.Println()
+	fmt.Println("--- ML Predictions ---")
+
+	if !promptYN(reader, "Enable local ML predictions (stuck detection, suggestion timing)? [Y/n]", "y") {
+		return "[ml]\nmode = \"disabled\"\n"
+	}
+
+	// Check if sigil-ml is installed.
+	if _, err := exec.LookPath("sigil-ml"); err != nil {
+		fmt.Println("  [info] sigil-ml not found in PATH")
+
+		// Try to install via Homebrew.
+		if _, brewErr := exec.LookPath("brew"); brewErr == nil {
+			if promptYN(reader, "  Install sigil-ml via Homebrew? [Y/n]", "y") {
+				fmt.Println("  Installing sigil-ml...")
+				cmd := exec.Command("brew", "install", "alecfeeman/sigil/sigil-ml")
+				cmd.Stdout = os.Stdout
+				cmd.Stderr = os.Stderr
+				if err := cmd.Run(); err != nil {
+					fmt.Printf("  [warn] brew install failed: %v\n", err)
+					fmt.Println("         Install manually: brew install alecfeeman/sigil/sigil-ml")
+					fmt.Println("         Or: pip install sigil-ml")
+				} else {
+					fmt.Println("  [ok]   sigil-ml installed")
+				}
+			}
+		} else {
+			fmt.Println("         Install manually: pip install sigil-ml")
+			fmt.Println("         Or: uv tool install sigil-ml")
+		}
+	} else {
+		fmt.Println("  [ok]   sigil-ml found in PATH")
+	}
+
+	var b strings.Builder
+	b.WriteString("[ml]\n")
+	b.WriteString("mode = \"local\"\n")
+	b.WriteString("retrain_every = 10\n\n")
+	b.WriteString("[ml.local]\n")
+	b.WriteString("enabled = true\n")
+	b.WriteString("server_url = \"http://127.0.0.1:7774\"\n")
+	b.WriteString("server_bin = \"sigil-ml\"\n\n")
+	b.WriteString("[ml.cloud]\n")
+	b.WriteString("enabled = false\n")
+	return b.String()
+}
+
 func setupFleet(reader *bufio.Reader) string {
 	fmt.Println()
 	fmt.Println("--- Team Insights (Fleet Reporting) ---")
@@ -376,7 +428,7 @@ func setupFleet(reader *bufio.Reader) string {
 }
 
 // installConfigFile creates config.toml with watch dirs, repo dirs, inference, and fleet sections.
-func installConfigFile(watchDirs, repoDirs []string, inferenceTOML, fleetTOML string) error {
+func installConfigFile(watchDirs, repoDirs []string, inferenceTOML, mlTOML, fleetTOML string) error {
 	cfgPath := config.DefaultPath()
 	if _, err := os.Stat(cfgPath); err == nil {
 		fmt.Printf("  [ok]   config already exists at %s\n", cfgPath)
@@ -414,6 +466,8 @@ func installConfigFile(watchDirs, repoDirs []string, inferenceTOML, fleetTOML st
 
 	b.WriteString("\n[notifier]\nlevel = 2\ndigest_time = \"09:00\"\n\n")
 	b.WriteString(inferenceTOML)
+	b.WriteString("\n\n")
+	b.WriteString(mlTOML)
 	b.WriteString("\n\n[retention]\nraw_event_days = 90\n\n")
 	b.WriteString(fleetTOML)
 	b.WriteString("\n")
