@@ -727,6 +727,61 @@ func (s *Store) InsertMLEvent(ctx context.Context, kind, endpoint, routing strin
 	return err
 }
 
+// InsertPluginEvent persists a plugin event.
+func (s *Store) InsertPluginEvent(ctx context.Context, plugin, kind, correlation, payload string) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO plugin_events (plugin, kind, correlation, payload, ts) VALUES (?, ?, ?, ?, ?)`,
+		plugin, kind, correlation, payload, time.Now().UnixMilli(),
+	)
+	return err
+}
+
+// QueryPluginEvents returns recent plugin events, optionally filtered by plugin name.
+func (s *Store) QueryPluginEvents(ctx context.Context, pluginName string, since time.Time, limit int) ([]PluginEventRecord, error) {
+	sinceMS := since.UnixMilli()
+	var rows *sql.Rows
+	var err error
+
+	if pluginName == "" {
+		rows, err = s.db.QueryContext(ctx,
+			`SELECT id, plugin, kind, correlation, payload, ts FROM plugin_events
+			 WHERE ts >= ? ORDER BY ts DESC LIMIT ?`, sinceMS, limit)
+	} else {
+		rows, err = s.db.QueryContext(ctx,
+			`SELECT id, plugin, kind, correlation, payload, ts FROM plugin_events
+			 WHERE plugin = ? AND ts >= ? ORDER BY ts DESC LIMIT ?`, pluginName, sinceMS, limit)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []PluginEventRecord
+	for rows.Next() {
+		var r PluginEventRecord
+		var tsMS int64
+		var corr, payload string
+		if err := rows.Scan(&r.ID, &r.Plugin, &r.Kind, &corr, &payload, &tsMS); err != nil {
+			return nil, err
+		}
+		r.Timestamp = time.UnixMilli(tsMS)
+		_ = json.Unmarshal([]byte(corr), &r.Correlation)
+		_ = json.Unmarshal([]byte(payload), &r.Payload)
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// PluginEventRecord is a persisted plugin event.
+type PluginEventRecord struct {
+	ID          int64
+	Plugin      string
+	Kind        string
+	Correlation map[string]string
+	Payload     map[string]any
+	Timestamp   time.Time
+}
+
 // QueryTaskMetrics computes aggregated task lifecycle metrics since the given time.
 func (s *Store) QueryTaskMetrics(ctx context.Context, since time.Time) (TaskMetrics, error) {
 	sinceMS := since.UnixMilli()
@@ -951,7 +1006,18 @@ CREATE TABLE IF NOT EXISTS ml_events (
     latency_ms INTEGER NOT NULL,
     ts         INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_ml_events_ts ON ml_events(ts);`
+CREATE INDEX IF NOT EXISTS idx_ml_events_ts ON ml_events(ts);
+
+CREATE TABLE IF NOT EXISTS plugin_events (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    plugin      TEXT NOT NULL,
+    kind        TEXT NOT NULL,
+    correlation TEXT NOT NULL DEFAULT '{}',
+    payload     TEXT NOT NULL DEFAULT '{}',
+    ts          INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_plugin_events_plugin ON plugin_events(plugin);
+CREATE INDEX IF NOT EXISTS idx_plugin_events_ts ON plugin_events(ts);`
 
 	_, err := db.Exec(schema)
 	return err
@@ -962,7 +1028,7 @@ CREATE INDEX IF NOT EXISTS idx_ml_events_ts ON ml_events(ts);`
 // Purge deletes all rows from all tables and then removes the SQLite database
 // file from disk.  The Store must not be used after calling Purge.
 func (s *Store) Purge() error {
-	tables := []string{"ml_events", "tasks", "feedback", "suggestions", "patterns", "ai_interactions", "events"}
+	tables := []string{"plugin_events", "ml_events", "tasks", "feedback", "suggestions", "patterns", "ai_interactions", "events"}
 	for _, t := range tables {
 		if _, err := s.db.Exec("DELETE FROM " + t); err != nil {
 			return fmt.Errorf("store: purge table %s: %w", t, err)
