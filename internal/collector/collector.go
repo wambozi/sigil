@@ -27,16 +27,19 @@ type Source interface {
 }
 
 // Collector fans in events from all registered sources and writes them to the
-// store.  It also exposes a broadcast channel for in-process consumers (e.g.
-// the analyzer's reactive tier).
+// store.  It exposes Subscribe() for in-process consumers that want a copy of
+// every stored event.
 type Collector struct {
 	store   EventInserter
 	sources []Source
 	log     *slog.Logger
 
-	// Broadcast receives every event that was successfully stored.
-	// Consumers must read promptly — a slow consumer drops events.
+	// Broadcast is kept for backward compatibility.  New consumers should use
+	// Subscribe() instead, which gives each consumer its own buffered channel.
 	Broadcast chan event.Event
+
+	mu          sync.Mutex
+	subscribers []chan event.Event
 
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
@@ -54,6 +57,17 @@ func New(s EventInserter, log *slog.Logger) *Collector {
 // Add registers an additional source.  Must be called before Start.
 func (c *Collector) Add(src Source) {
 	c.sources = append(c.sources, src)
+}
+
+// Subscribe returns a new buffered channel that receives a copy of every
+// stored event.  Each subscriber gets its own channel so a slow consumer
+// does not block others.  Must be called before Start.
+func (c *Collector) Subscribe() <-chan event.Event {
+	ch := make(chan event.Event, 256)
+	c.mu.Lock()
+	c.subscribers = append(c.subscribers, ch)
+	c.mu.Unlock()
+	return ch
 }
 
 // Start launches all sources and begins fanning their events into the store.
@@ -83,6 +97,11 @@ func (c *Collector) Stop() {
 	}
 	c.wg.Wait()
 	close(c.Broadcast)
+	c.mu.Lock()
+	for _, ch := range c.subscribers {
+		close(ch)
+	}
+	c.mu.Unlock()
 }
 
 // drain reads events from a single source channel and writes them to the store.
@@ -99,11 +118,20 @@ func (c *Collector) drain(ctx context.Context, name string, ch <-chan event.Even
 				c.log.Error("store event", "source", name, "err", err)
 				continue
 			}
-			// Non-blocking broadcast — slow consumers drop events.
+			// Non-blocking broadcast to legacy channel.
 			select {
 			case c.Broadcast <- e:
 			default:
 			}
+			// Non-blocking fan-out to all subscribers.
+			c.mu.Lock()
+			for _, sub := range c.subscribers {
+				select {
+				case sub <- e:
+				default:
+				}
+			}
+			c.mu.Unlock()
 
 		case <-ctx.Done():
 			return

@@ -86,6 +86,10 @@ type Notifier struct {
 	// level for rate-limiting purposes.
 	lastShownAt map[Level]time.Time
 
+	// recentSuggestions tracks title+body of recently surfaced suggestions
+	// to avoid duplicates across analysis cycles.
+	recentSuggestions map[string]time.Time
+
 	// OnSuggestion, if set, is called after every suggestion that passes the
 	// confidence gate (>= ConfidenceModerate). It receives the store-assigned
 	// ID and the suggestion. Must be non-blocking.
@@ -100,11 +104,12 @@ type Notifier struct {
 // New creates a Notifier at the given level.
 func New(s SuggestionStore, level Level, log *slog.Logger) *Notifier {
 	return &Notifier{
-		level:       level,
-		store:       s,
-		platform:    newPlatform(log),
-		log:         log,
-		lastShownAt: make(map[Level]time.Time),
+		level:            level,
+		store:            s,
+		platform:         newPlatform(log),
+		log:              log,
+		lastShownAt:      make(map[Level]time.Time),
+		recentSuggestions: make(map[string]time.Time),
 	}
 }
 
@@ -126,8 +131,27 @@ func (n *Notifier) SetLevel(l Level) {
 // Surface persists the suggestion and displays it according to the current
 // level.  Safe to call from any goroutine; storage and display are
 // non-blocking.
+// dedupWindow is how long a suggestion with the same title+body is suppressed.
+const dedupWindow = 6 * time.Hour
+
 func (n *Notifier) Surface(sg Suggestion) {
 	ctx := context.Background()
+
+	// Dedup: skip if the same title+body was surfaced recently.
+	dedupKey := sg.Title + "|" + sg.Body
+	n.mu.Lock()
+	if last, ok := n.recentSuggestions[dedupKey]; ok && time.Since(last) < dedupWindow {
+		n.mu.Unlock()
+		return
+	}
+	n.recentSuggestions[dedupKey] = time.Now()
+	// Prune old entries to prevent unbounded growth.
+	for k, t := range n.recentSuggestions {
+		if time.Since(t) > dedupWindow {
+			delete(n.recentSuggestions, k)
+		}
+	}
+	n.mu.Unlock()
 
 	// Always persist — every suggestion is queryable via sigilctl regardless
 	// of whether it was ever shown.

@@ -37,6 +37,10 @@ type EventReader interface {
 	QueryPattern(ctx context.Context, kind string, dest any) error
 	QuerySuggestions(ctx context.Context, status SuggestionStatus, n int) ([]Suggestion, error)
 	QueryUndoableActions(ctx context.Context) ([]ActionRecord, error)
+	QueryCurrentTask(ctx context.Context) (*TaskRecord, error)
+	QueryTaskHistory(ctx context.Context, since time.Time, limit int) ([]TaskRecord, error)
+	QueryTasksByDate(ctx context.Context, date time.Time) ([]TaskRecord, error)
+	QueryGitEvents(ctx context.Context, since time.Time) ([]event.Event, error)
 }
 
 // EventWriter is the write subset of Store used by the collector and notifier.
@@ -49,6 +53,8 @@ type EventWriter interface {
 	InsertFeedback(ctx context.Context, suggestionID int64, outcome string) error
 	InsertAction(ctx context.Context, actionID, description, executeCmd, undoCmd string, createdAt, expiresAt time.Time) error
 	MarkActionUndone(ctx context.Context, actionID string) error
+	InsertTask(ctx context.Context, t TaskRecord) error
+	UpdateTask(ctx context.Context, t TaskRecord) error
 }
 
 // ReadWriter combines EventReader and EventWriter for components that need both.
@@ -329,6 +335,21 @@ type FileEditCount struct {
 	Count int64
 }
 
+// TaskRecord represents a tracked task in the store.
+type TaskRecord struct {
+	ID           string
+	RepoRoot     string
+	Branch       string
+	Phase        string
+	Files        map[string]int // path → edit count
+	StartedAt    time.Time
+	LastActivity time.Time
+	CompletedAt  *time.Time
+	CommitCount  int
+	TestRuns     int
+	TestFailures int
+}
+
 // QueryTopFiles returns the n most-edited files (kind="file") since the given
 // time, ordered by edit count descending.  The path is extracted from the
 // JSON payload field "path".  Rows whose payload cannot be decoded are
@@ -573,6 +594,172 @@ func (s *Store) InsertFeedback(ctx context.Context, suggestionID int64, outcome 
 	return err
 }
 
+// --- Task tracking ---------------------------------------------------------
+
+// InsertTask persists a new task record.
+func (s *Store) InsertTask(ctx context.Context, t TaskRecord) error {
+	files, err := json.Marshal(t.Files)
+	if err != nil {
+		return fmt.Errorf("store: marshal task files: %w", err)
+	}
+
+	var completedAt sql.NullInt64
+	if t.CompletedAt != nil {
+		completedAt = sql.NullInt64{Int64: t.CompletedAt.UnixMilli(), Valid: true}
+	}
+
+	_, err = s.db.ExecContext(ctx,
+		`INSERT INTO tasks (id, repo_root, branch, phase, files, started_at, last_active, completed_at, commit_count, test_runs, test_fails)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		t.ID, t.RepoRoot, t.Branch, t.Phase, string(files),
+		t.StartedAt.UnixMilli(), t.LastActivity.UnixMilli(), completedAt,
+		t.CommitCount, t.TestRuns, t.TestFailures,
+	)
+	return err
+}
+
+// UpdateTask updates an existing task record by ID.
+func (s *Store) UpdateTask(ctx context.Context, t TaskRecord) error {
+	files, err := json.Marshal(t.Files)
+	if err != nil {
+		return fmt.Errorf("store: marshal task files: %w", err)
+	}
+
+	var completedAt sql.NullInt64
+	if t.CompletedAt != nil {
+		completedAt = sql.NullInt64{Int64: t.CompletedAt.UnixMilli(), Valid: true}
+	}
+
+	_, err = s.db.ExecContext(ctx,
+		`UPDATE tasks SET repo_root = ?, branch = ?, phase = ?, files = ?,
+		 started_at = ?, last_active = ?, completed_at = ?,
+		 commit_count = ?, test_runs = ?, test_fails = ?
+		 WHERE id = ?`,
+		t.RepoRoot, t.Branch, t.Phase, string(files),
+		t.StartedAt.UnixMilli(), t.LastActivity.UnixMilli(), completedAt,
+		t.CommitCount, t.TestRuns, t.TestFailures, t.ID,
+	)
+	return err
+}
+
+// QueryCurrentTask returns the most recently active non-idle, non-completed task,
+// or nil if no such task exists.
+func (s *Store) QueryCurrentTask(ctx context.Context) (*TaskRecord, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT id, repo_root, branch, phase, files, started_at, last_active, completed_at, commit_count, test_runs, test_fails
+		 FROM tasks WHERE phase != 'idle' AND completed_at IS NULL
+		 ORDER BY last_active DESC LIMIT 1`,
+	)
+	t, err := scanTaskRecord(row)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("store: query current task: %w", err)
+	}
+	return t, nil
+}
+
+// QueryTaskHistory returns tasks started at or after since, ordered by
+// started_at descending, limited to limit rows.
+func (s *Store) QueryTaskHistory(ctx context.Context, since time.Time, limit int) ([]TaskRecord, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, repo_root, branch, phase, files, started_at, last_active, completed_at, commit_count, test_runs, test_fails
+		 FROM tasks WHERE started_at >= ?
+		 ORDER BY started_at DESC LIMIT ?`,
+		since.UnixMilli(), limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("store: query task history: %w", err)
+	}
+	defer rows.Close()
+	return scanTaskRows(rows)
+}
+
+// QueryTasksByDate returns all tasks whose started_at falls within the given
+// calendar day (in the local timezone), ordered by started_at ascending.
+func (s *Store) QueryTasksByDate(ctx context.Context, date time.Time) ([]TaskRecord, error) {
+	startOfDay := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
+	startOfNext := startOfDay.AddDate(0, 0, 1)
+
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, repo_root, branch, phase, files, started_at, last_active, completed_at, commit_count, test_runs, test_fails
+		 FROM tasks WHERE started_at >= ? AND started_at < ?
+		 ORDER BY started_at ASC`,
+		startOfDay.UnixMilli(), startOfNext.UnixMilli(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("store: query tasks by date: %w", err)
+	}
+	defer rows.Close()
+	return scanTaskRows(rows)
+}
+
+// QueryGitEvents returns all git events since the given time.
+func (s *Store) QueryGitEvents(ctx context.Context, since time.Time) ([]event.Event, error) {
+	return s.queryEventsSince(ctx, event.KindGit, since)
+}
+
+// scanTaskRecord scans a single task row from a *sql.Row.
+func scanTaskRecord(row *sql.Row) (*TaskRecord, error) {
+	var (
+		t           TaskRecord
+		filesJSON   string
+		startedMS   int64
+		lastMS      int64
+		completedMS sql.NullInt64
+	)
+	if err := row.Scan(
+		&t.ID, &t.RepoRoot, &t.Branch, &t.Phase, &filesJSON,
+		&startedMS, &lastMS, &completedMS,
+		&t.CommitCount, &t.TestRuns, &t.TestFailures,
+	); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal([]byte(filesJSON), &t.Files); err != nil {
+		return nil, fmt.Errorf("store: unmarshal task files: %w", err)
+	}
+	t.StartedAt = time.UnixMilli(startedMS)
+	t.LastActivity = time.UnixMilli(lastMS)
+	if completedMS.Valid {
+		ct := time.UnixMilli(completedMS.Int64)
+		t.CompletedAt = &ct
+	}
+	return &t, nil
+}
+
+// scanTaskRows scans multiple task rows from *sql.Rows.
+func scanTaskRows(rows *sql.Rows) ([]TaskRecord, error) {
+	var out []TaskRecord
+	for rows.Next() {
+		var (
+			t           TaskRecord
+			filesJSON   string
+			startedMS   int64
+			lastMS      int64
+			completedMS sql.NullInt64
+		)
+		if err := rows.Scan(
+			&t.ID, &t.RepoRoot, &t.Branch, &t.Phase, &filesJSON,
+			&startedMS, &lastMS, &completedMS,
+			&t.CommitCount, &t.TestRuns, &t.TestFailures,
+		); err != nil {
+			return nil, fmt.Errorf("store: scan task row: %w", err)
+		}
+		if err := json.Unmarshal([]byte(filesJSON), &t.Files); err != nil {
+			return nil, fmt.Errorf("store: unmarshal task files: %w", err)
+		}
+		t.StartedAt = time.UnixMilli(startedMS)
+		t.LastActivity = time.UnixMilli(lastMS)
+		if completedMS.Valid {
+			ct := time.UnixMilli(completedMS.Int64)
+			t.CompletedAt = &ct
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
 // migrate creates all tables and indexes if they do not already exist.
 // Idempotent — safe to call on every startup.
 func migrate(db *sql.DB) error {
@@ -640,7 +827,23 @@ CREATE TABLE IF NOT EXISTS action_log (
     undone_at   INTEGER,
     expires_at  INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_action_log_created ON action_log (created_at);`
+CREATE INDEX IF NOT EXISTS idx_action_log_created ON action_log (created_at);
+
+CREATE TABLE IF NOT EXISTS tasks (
+    id           TEXT    PRIMARY KEY,
+    repo_root    TEXT    NOT NULL,
+    branch       TEXT    NOT NULL DEFAULT '',
+    phase        TEXT    NOT NULL DEFAULT 'idle',
+    files        TEXT    NOT NULL DEFAULT '{}',
+    started_at   INTEGER NOT NULL,
+    last_active  INTEGER NOT NULL,
+    completed_at INTEGER,
+    commit_count INTEGER NOT NULL DEFAULT 0,
+    test_runs    INTEGER NOT NULL DEFAULT 0,
+    test_fails   INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_tasks_phase ON tasks (phase);
+CREATE INDEX IF NOT EXISTS idx_tasks_started ON tasks (started_at);`
 
 	_, err := db.Exec(schema)
 	return err
@@ -651,7 +854,7 @@ CREATE INDEX IF NOT EXISTS idx_action_log_created ON action_log (created_at);`
 // Purge deletes all rows from all tables and then removes the SQLite database
 // file from disk.  The Store must not be used after calling Purge.
 func (s *Store) Purge() error {
-	tables := []string{"feedback", "suggestions", "patterns", "ai_interactions", "events"}
+	tables := []string{"tasks", "feedback", "suggestions", "patterns", "ai_interactions", "events"}
 	for _, t := range tables {
 		if _, err := s.db.Exec("DELETE FROM " + t); err != nil {
 			return fmt.Errorf("store: purge table %s: %w", t, err)

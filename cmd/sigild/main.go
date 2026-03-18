@@ -44,6 +44,7 @@ import (
 	"github.com/wambozi/sigil/internal/notifier"
 	"github.com/wambozi/sigil/internal/socket"
 	"github.com/wambozi/sigil/internal/store"
+	"github.com/wambozi/sigil/internal/task"
 )
 
 func main() {
@@ -215,6 +216,14 @@ func run(cfg daemonConfig, log *slog.Logger) error {
 	}
 	log.Info("collector started")
 
+	// --- Task Tracker -------------------------------------------------------
+	taskTracker := task.NewTracker(db, log)
+	if err := taskTracker.Restore(ctx); err != nil {
+		log.Warn("task tracker: restore failed", "err", err)
+	}
+	go taskTracker.RunEventLoop(ctx, col.Subscribe())
+	log.Info("task tracker started")
+
 	// --- Notifier -----------------------------------------------------------
 	ntf := notifier.New(db, notifier.Level(cfg.notifierLevel), log)
 	log.Info("notifier started", "level", cfg.notifierLevel)
@@ -255,6 +264,7 @@ func run(cfg daemonConfig, log *slog.Logger) error {
 	// --- Socket server ------------------------------------------------------
 	srv := socket.New(cfg.socketPath, log)
 	registerHandlers(srv, db, engine, ntf, anlz, terminalSrc, log, &currentRSSMB, nextDigest, &currentProfile, cfg)
+	registerTaskHandlers(srv, taskTracker, db)
 
 	// Wire suggestion push via the notifier's OnSuggestion callback.
 	// Every suggestion that passes the confidence gate is fanned out to any
@@ -823,6 +833,138 @@ func registerHandlers(
 		srv.Notify("actuations", payload)
 		log.Info("keybinding profile changed", "profile", p.View)
 		return socket.Response{OK: true}
+	})
+}
+
+// --- Task socket handlers ---------------------------------------------------
+
+func registerTaskHandlers(srv *socket.Server, tracker *task.Tracker, db *store.Store) {
+	// task — return the current inferred task.
+	srv.Handle("task", func(ctx context.Context, _ socket.Request) socket.Response {
+		cur := tracker.Current()
+		if cur == nil {
+			return socket.Response{OK: true, Payload: socket.MarshalPayload(map[string]any{
+				"phase": "idle",
+			})}
+		}
+
+		// Build top files list (sorted by edit count).
+		type fileEntry struct {
+			Path  string `json:"path"`
+			Edits int    `json:"edits"`
+		}
+		files := make([]fileEntry, 0, len(cur.FilesTouched))
+		for p, n := range cur.FilesTouched {
+			files = append(files, fileEntry{p, n})
+		}
+		for i := 1; i < len(files); i++ {
+			for j := i; j > 0 && files[j].Edits > files[j-1].Edits; j-- {
+				files[j], files[j-1] = files[j-1], files[j]
+			}
+		}
+		if len(files) > 10 {
+			files = files[:10]
+		}
+
+		elapsed := time.Since(cur.StartedAt)
+
+		return socket.Response{OK: true, Payload: socket.MarshalPayload(map[string]any{
+			"id":            cur.ID,
+			"phase":         string(cur.Phase),
+			"repo_root":     cur.RepoRoot,
+			"branch":        cur.Branch,
+			"files":         files,
+			"started_at":    cur.StartedAt.Format(time.RFC3339),
+			"elapsed_min":   int(elapsed.Minutes()),
+			"commit_count":  cur.CommitCount,
+			"test_runs":     cur.TestRuns,
+			"test_failures": cur.TestFailures,
+		})}
+	})
+
+	// task-history — return recent task transitions.
+	srv.Handle("task-history", func(ctx context.Context, _ socket.Request) socket.Response {
+		since := time.Now().Add(-7 * 24 * time.Hour)
+		tasks, err := db.QueryTaskHistory(ctx, since, 20)
+		if err != nil {
+			return socket.Response{Error: err.Error()}
+		}
+		type row struct {
+			ID        string `json:"id"`
+			Phase     string `json:"phase"`
+			RepoRoot  string `json:"repo_root"`
+			Branch    string `json:"branch"`
+			StartedAt string `json:"started_at"`
+			Commits   int    `json:"commits"`
+			Files     int    `json:"files"`
+		}
+		rows := make([]row, 0, len(tasks))
+		for _, t := range tasks {
+			rows = append(rows, row{
+				ID:        t.ID,
+				Phase:     t.Phase,
+				RepoRoot:  t.RepoRoot,
+				Branch:    t.Branch,
+				StartedAt: t.StartedAt.Format(time.RFC3339),
+				Commits:   t.CommitCount,
+				Files:     len(t.Files),
+			})
+		}
+		return socket.Response{OK: true, Payload: socket.MarshalPayload(rows)}
+	})
+
+	// day-summary — return today's work summary.
+	srv.Handle("day-summary", func(ctx context.Context, _ socket.Request) socket.Response {
+		today := time.Now()
+		tasks, err := db.QueryTasksByDate(ctx, today)
+		if err != nil {
+			return socket.Response{Error: err.Error()}
+		}
+
+		repos := make(map[string]struct{})
+		var totalCommits, completed, started int
+		allFiles := make(map[string]struct{})
+		var totalEditMin, totalVerifyMin, totalStuckMin float64
+
+		for _, t := range tasks {
+			started++
+			if t.RepoRoot != "" {
+				repos[t.RepoRoot] = struct{}{}
+			}
+			totalCommits += t.CommitCount
+			if t.CompletedAt != nil {
+				completed++
+			}
+			for f := range t.Files {
+				allFiles[f] = struct{}{}
+			}
+			duration := t.LastActivity.Sub(t.StartedAt).Minutes()
+			switch t.Phase {
+			case "verifying":
+				totalVerifyMin += duration
+			case "stuck":
+				totalStuckMin += duration
+			default:
+				totalEditMin += duration
+			}
+		}
+
+		repoList := make([]string, 0, len(repos))
+		for r := range repos {
+			repoList = append(repoList, r)
+		}
+
+		return socket.Response{OK: true, Payload: socket.MarshalPayload(map[string]any{
+			"date":             today.Format("2006-01-02"),
+			"repos":            repoList,
+			"tasks_started":    started,
+			"tasks_completed":  completed,
+			"total_commits":    totalCommits,
+			"files_touched":    len(allFiles),
+			"editing_minutes":  int(totalEditMin),
+			"verifying_minutes": int(totalVerifyMin),
+			"stuck_minutes":    int(totalStuckMin),
+		})}
 	})
 }
 

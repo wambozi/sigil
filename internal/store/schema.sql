@@ -40,3 +40,21 @@ CREATE TABLE IF NOT EXISTS patterns (
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 );
+
+-- Tracked development tasks for the task tracking system.
+CREATE TABLE IF NOT EXISTS tasks (
+    id           TEXT    PRIMARY KEY,
+    repo_root    TEXT    NOT NULL,
+    branch       TEXT    NOT NULL DEFAULT '',
+    phase        TEXT    NOT NULL DEFAULT 'idle',   -- idle | exploring | coding | testing | reviewing
+    files        TEXT    NOT NULL DEFAULT '{}',     -- JSON: path → edit count
+    started_at   INTEGER NOT NULL,                  -- Unix milliseconds
+    last_active  INTEGER NOT NULL,                  -- Unix milliseconds
+    completed_at INTEGER,                           -- Unix milliseconds, NULL while active
+    commit_count INTEGER NOT NULL DEFAULT 0,
+    test_runs    INTEGER NOT NULL DEFAULT 0,
+    test_fails   INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_phase ON tasks (phase);
+CREATE INDEX IF NOT EXISTS idx_tasks_started ON tasks (started_at);

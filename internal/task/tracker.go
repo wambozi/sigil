@@ -1,0 +1,299 @@
+package task
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/wambozi/sigil/internal/event"
+	"github.com/wambozi/sigil/internal/store"
+)
+
+const (
+	// idleTimeout is the duration of inactivity before a task transitions to idle.
+	idleTimeout = 15 * time.Minute
+
+	// stuckThreshold is the number of consecutive test failures before the
+	// verifying phase escalates to stuck.
+	stuckThreshold = 3
+)
+
+// Tracker maintains the current task state and processes events in real time.
+// It runs an event loop reading from a broadcast channel and updates the
+// store on every phase transition.
+type Tracker struct {
+	store store.ReadWriter
+	log   *slog.Logger
+
+	mu      sync.Mutex
+	current *Task
+
+	idleTimer *time.Timer
+}
+
+// NewTracker creates a Tracker backed by the given store.
+func NewTracker(s store.ReadWriter, log *slog.Logger) *Tracker {
+	return &Tracker{
+		store: s,
+		log:   log,
+	}
+}
+
+// Restore loads the current task from the store so the tracker survives
+// daemon restarts.
+func (t *Tracker) Restore(ctx context.Context) error {
+	rec, err := t.store.QueryCurrentTask(ctx)
+	if err != nil {
+		return fmt.Errorf("task tracker: restore: %w", err)
+	}
+	if rec == nil {
+		return nil
+	}
+	t.current = recordToTask(rec)
+	t.log.Info("task tracker: restored task", "id", t.current.ID, "phase", t.current.Phase, "repo", t.current.RepoRoot)
+	return nil
+}
+
+// Current returns a snapshot of the current task.  Returns nil if idle.
+func (t *Tracker) Current() *Task {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.current == nil {
+		return nil
+	}
+	cp := *t.current
+	files := make(map[string]int, len(t.current.FilesTouched))
+	for k, v := range t.current.FilesTouched {
+		files[k] = v
+	}
+	cp.FilesTouched = files
+	return &cp
+}
+
+// RunEventLoop reads events from the broadcast channel and processes them
+// until the channel is closed or ctx is cancelled.
+func (t *Tracker) RunEventLoop(ctx context.Context, events <-chan event.Event) {
+	for {
+		select {
+		case e, ok := <-events:
+			if !ok {
+				return
+			}
+			t.Process(ctx, e)
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// Process handles a single event, updating the task state machine.
+func (t *Tracker) Process(ctx context.Context, e event.Event) {
+	sig, ok := ClassifyEvent(e)
+	if !ok {
+		return
+	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	// Reset idle timer on every relevant signal.
+	t.resetIdleTimer(ctx)
+
+	repo := RepoFromEvent(e)
+	now := e.Timestamp
+	if now.IsZero() {
+		now = time.Now()
+	}
+
+	// If we have no current task and get a meaningful signal, start one.
+	if t.current == nil {
+		if sig == SignalIdleTimeout {
+			return
+		}
+		t.startTask(ctx, repo, now)
+	}
+
+	// If the event is from a different repo, complete current and start new.
+	if repo != "" && t.current.RepoRoot != "" && repo != t.current.RepoRoot {
+		t.completeCurrentTask(ctx, now)
+		t.startTask(ctx, repo, now)
+	}
+
+	// For terminal test commands, use the result signal instead.
+	if sig == SignalTestCmd {
+		t.current.TestRuns++
+		sig = ClassifyTerminalResult(e)
+	}
+
+	// Track test results.
+	if sig == SignalTestPass {
+		t.current.TestFailures = 0
+	}
+	if sig == SignalTestFail {
+		t.current.TestFailures++
+	}
+
+	// Run the state machine.
+	oldPhase := t.current.Phase
+	newPhase := Transition(t.current.Phase, sig)
+
+	// Override: consecutive failures escalate verifying → stuck.
+	if newPhase == PhaseVerifying && t.current.TestFailures >= stuckThreshold {
+		newPhase = PhaseStuck
+	}
+
+	t.current.Phase = newPhase
+	t.current.LastActivity = now
+
+	// Track file edits.
+	if sig == SignalFileEdit {
+		if path, ok := e.Payload["path"].(string); ok && path != "" {
+			t.current.FilesTouched[path]++
+		}
+	}
+
+	// Track commits.
+	if sig == SignalCommit {
+		t.current.CommitCount++
+	}
+
+	// Detect branch from git HEAD changes.
+	if sig == SignalBranchSwitch {
+		if repo != "" {
+			if branch := readBranch(repo); branch != "" {
+				t.current.Branch = branch
+			}
+		}
+	}
+
+	// Handle task completion (completing → idle).
+	if oldPhase != PhaseIdle && newPhase == PhaseIdle {
+		t.completeCurrentTask(ctx, now)
+		return
+	}
+
+	// Persist on phase change.
+	if oldPhase != newPhase {
+		t.log.Info("task phase transition", "from", oldPhase, "to", newPhase, "repo", t.current.RepoRoot)
+		t.persist(ctx)
+	}
+}
+
+// startTask creates a new task and persists it.
+func (t *Tracker) startTask(ctx context.Context, repo string, now time.Time) {
+	id := fmt.Sprintf("t_%d", now.UnixMilli())
+	branch := ""
+	if repo != "" {
+		branch = readBranch(repo)
+	}
+
+	t.current = &Task{
+		ID:           id,
+		RepoRoot:     repo,
+		Branch:       branch,
+		Phase:        PhaseIdle, // will transition immediately
+		FilesTouched: make(map[string]int),
+		StartedAt:    now,
+		LastActivity: now,
+	}
+
+	t.persist(ctx)
+	t.log.Info("task started", "id", id, "repo", repo, "branch", branch)
+}
+
+// completeCurrentTask marks the current task as completed and persists it.
+func (t *Tracker) completeCurrentTask(ctx context.Context, now time.Time) {
+	if t.current == nil {
+		return
+	}
+	t.current.Phase = PhaseIdle
+	t.current.CompletedAt = &now
+	t.persist(ctx)
+	t.log.Info("task completed", "id", t.current.ID, "commits", t.current.CommitCount, "files", len(t.current.FilesTouched))
+	t.current = nil
+}
+
+// persist writes the current task to the store.
+func (t *Tracker) persist(ctx context.Context) {
+	if t.current == nil {
+		return
+	}
+	rec := taskToRecord(t.current)
+
+	// Try update first; if no rows affected, insert.
+	if err := t.store.UpdateTask(ctx, rec); err != nil {
+		if err := t.store.InsertTask(ctx, rec); err != nil {
+			t.log.Error("task tracker: persist", "err", err)
+		}
+	}
+}
+
+// resetIdleTimer resets the idle timeout.  If no signal arrives within
+// idleTimeout, an idle transition is triggered.
+func (t *Tracker) resetIdleTimer(ctx context.Context) {
+	if t.idleTimer != nil {
+		t.idleTimer.Stop()
+	}
+	t.idleTimer = time.AfterFunc(idleTimeout, func() {
+		t.mu.Lock()
+		defer t.mu.Unlock()
+		if t.current != nil {
+			t.log.Info("task idle timeout", "id", t.current.ID)
+			t.completeCurrentTask(ctx, time.Now())
+		}
+	})
+}
+
+// readBranch reads the current branch from .git/HEAD in the given repo root.
+// Returns empty string on any error or detached HEAD.
+func readBranch(repoRoot string) string {
+	data, err := os.ReadFile(filepath.Join(repoRoot, ".git", "HEAD"))
+	if err != nil {
+		return ""
+	}
+	line := strings.TrimSpace(string(data))
+	const prefix = "ref: refs/heads/"
+	if strings.HasPrefix(line, prefix) {
+		return line[len(prefix):]
+	}
+	return "" // detached HEAD
+}
+
+// recordToTask converts a store.TaskRecord to a Task.
+func recordToTask(rec *store.TaskRecord) *Task {
+	return &Task{
+		ID:           rec.ID,
+		RepoRoot:     rec.RepoRoot,
+		Branch:       rec.Branch,
+		Phase:        Phase(rec.Phase),
+		FilesTouched: rec.Files,
+		StartedAt:    rec.StartedAt,
+		LastActivity: rec.LastActivity,
+		CompletedAt:  rec.CompletedAt,
+		CommitCount:  rec.CommitCount,
+		TestRuns:     rec.TestRuns,
+		TestFailures: rec.TestFailures,
+	}
+}
+
+// taskToRecord converts a Task to a store.TaskRecord.
+func taskToRecord(t *Task) store.TaskRecord {
+	return store.TaskRecord{
+		ID:           t.ID,
+		RepoRoot:     t.RepoRoot,
+		Branch:       t.Branch,
+		Phase:        string(t.Phase),
+		Files:        t.FilesTouched,
+		StartedAt:    t.StartedAt,
+		LastActivity: t.LastActivity,
+		CompletedAt:  t.CompletedAt,
+		CommitCount:  t.CommitCount,
+		TestRuns:     t.TestRuns,
+		TestFailures: t.TestFailures,
+	}
+}
