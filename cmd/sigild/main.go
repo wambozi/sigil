@@ -40,6 +40,7 @@ import (
 	"github.com/wambozi/sigil/internal/event"
 	"github.com/wambozi/sigil/internal/fleet"
 	"github.com/wambozi/sigil/internal/inference"
+	"github.com/wambozi/sigil/internal/ml"
 	"github.com/wambozi/sigil/internal/network"
 	"github.com/wambozi/sigil/internal/notifier"
 	"github.com/wambozi/sigil/internal/socket"
@@ -224,6 +225,36 @@ func run(cfg daemonConfig, log *slog.Logger) error {
 	go taskTracker.RunEventLoop(ctx, col.Subscribe())
 	log.Info("task tracker started")
 
+	// --- ML Engine ----------------------------------------------------------
+	mlCfg := ml.Config{
+		Mode:         ml.RoutingMode(cfg.fileCfg.ML.Mode),
+		RetrainEvery: cfg.fileCfg.ML.RetrainEvery,
+		Local: ml.LocalConfig{
+			Enabled:   cfg.fileCfg.ML.Local.Enabled,
+			ServerURL: cfg.fileCfg.ML.Local.ServerURL,
+			ServerBin: cfg.fileCfg.ML.Local.ServerBin,
+		},
+		Cloud: ml.CloudConfig{
+			Enabled: cfg.fileCfg.ML.Cloud.Enabled,
+			BaseURL: cfg.fileCfg.ML.Cloud.BaseURL,
+			APIKey:  cfg.fileCfg.ML.Cloud.APIKey,
+		},
+	}
+	mlEngine, err := ml.New(mlCfg, log)
+	if err != nil {
+		log.Warn("ml engine: creation failed", "err", err)
+		mlEngine = &ml.Engine{} // nil-safe disabled engine
+	} else if mlEngine.Enabled() {
+		pingCtx, cancelML := context.WithTimeout(ctx, 5*time.Second)
+		if err := mlEngine.Ping(pingCtx); err != nil {
+			log.Warn("ml engine unreachable at startup — will retry", "err", err)
+		} else {
+			log.Info("ml engine reachable")
+		}
+		cancelML()
+	}
+	defer mlEngine.Close()
+
 	// --- Notifier -----------------------------------------------------------
 	ntf := notifier.New(db, notifier.Level(cfg.notifierLevel), log)
 	log.Info("notifier started", "level", cfg.notifierLevel)
@@ -265,6 +296,7 @@ func run(cfg daemonConfig, log *slog.Logger) error {
 	srv := socket.New(cfg.socketPath, log)
 	registerHandlers(srv, db, engine, ntf, anlz, terminalSrc, log, &currentRSSMB, nextDigest, &currentProfile, cfg)
 	registerTaskHandlers(srv, taskTracker, db)
+	registerMLHandlers(srv, mlEngine, cfg.dbPath)
 
 	// Wire suggestion push via the notifier's OnSuggestion callback.
 	// Every suggestion that passes the confidence gate is fanned out to any
@@ -1025,6 +1057,58 @@ func registerTaskHandlers(srv *socket.Server, tracker *task.Tracker, db *store.S
 			"tasks":             taskList,
 			"speed_score":       daySpeedScore,
 		})}
+	})
+}
+
+// --- ML socket handlers -----------------------------------------------------
+
+func registerMLHandlers(srv *socket.Server, engine *ml.Engine, dbPath string) {
+	// ml-status — health and loaded models.
+	srv.Handle("ml-status", func(ctx context.Context, _ socket.Request) socket.Response {
+		if !engine.Enabled() {
+			return socket.Response{OK: true, Payload: socket.MarshalPayload(map[string]any{
+				"status": "disabled",
+			})}
+		}
+		err := engine.Ping(ctx)
+		status := "ok"
+		if err != nil {
+			status = "unreachable"
+		}
+		return socket.Response{OK: true, Payload: socket.MarshalPayload(map[string]any{
+			"status": status,
+		})}
+	})
+
+	// ml-train — trigger retraining.
+	srv.Handle("ml-train", func(ctx context.Context, _ socket.Request) socket.Response {
+		if !engine.Enabled() {
+			return socket.Response{Error: "ml engine is disabled"}
+		}
+		result, err := engine.Train(ctx, dbPath)
+		if err != nil {
+			return socket.Response{Error: err.Error()}
+		}
+		return socket.Response{OK: true, Payload: socket.MarshalPayload(result)}
+	})
+
+	// ml-predict — run all predictions for current state.
+	srv.Handle("ml-predict", func(ctx context.Context, req socket.Request) socket.Response {
+		if !engine.Enabled() {
+			return socket.Response{Error: "ml engine is disabled"}
+		}
+		var p struct {
+			Endpoint string         `json:"endpoint"`
+			Features map[string]any `json:"features"`
+		}
+		if err := json.Unmarshal(req.Payload, &p); err != nil {
+			return socket.Response{Error: "invalid payload: " + err.Error()}
+		}
+		pred, err := engine.Predict(ctx, p.Endpoint, p.Features)
+		if err != nil {
+			return socket.Response{Error: err.Error()}
+		}
+		return socket.Response{OK: true, Payload: socket.MarshalPayload(pred)}
 	})
 }
 

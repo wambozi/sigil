@@ -19,9 +19,32 @@ type Config struct {
 	Daemon    DaemonConfig    `toml:"daemon"`
 	Notifier  NotifierConfig  `toml:"notifier"`
 	Inference InferenceConfig `toml:"inference"`
+	ML        MLConfig        `toml:"ml"`
 	Retention RetentionConfig `toml:"retention"`
 	Fleet     FleetConfig     `toml:"fleet"`
 	Network   NetworkConfig   `toml:"network"`
+}
+
+// MLConfig configures the ML prediction sidecar.
+type MLConfig struct {
+	Mode         string        `toml:"mode"`          // local | localfirst | remotefirst | remote | disabled
+	RetrainEvery int           `toml:"retrain_every"` // retrain after N completed tasks (0 = manual)
+	Local        MLLocalConfig `toml:"local"`
+	Cloud        MLCloudConfig `toml:"cloud"`
+}
+
+// MLLocalConfig configures the local sigil-ml sidecar.
+type MLLocalConfig struct {
+	Enabled   bool   `toml:"enabled"`
+	ServerURL string `toml:"server_url"`
+	ServerBin string `toml:"server_bin"`
+}
+
+// MLCloudConfig configures the cloud ML API.
+type MLCloudConfig struct {
+	Enabled bool   `toml:"enabled"`
+	BaseURL string `toml:"base_url"`
+	APIKey  string `toml:"api_key"`
 }
 
 // NetworkConfig controls the optional TCP listener.
@@ -260,6 +283,32 @@ func merge(dst, src *Config) {
 	}
 	if len(src.Network.AllowedCredentials) > 0 {
 		dst.Network.AllowedCredentials = src.Network.AllowedCredentials
+	}
+
+	// ML
+	if src.ML.Mode != "" {
+		dst.ML.Mode = src.ML.Mode
+	}
+	if src.ML.RetrainEvery != 0 {
+		dst.ML.RetrainEvery = src.ML.RetrainEvery
+	}
+	if src.ML.Local.Enabled {
+		dst.ML.Local.Enabled = true
+	}
+	if src.ML.Local.ServerURL != "" {
+		dst.ML.Local.ServerURL = src.ML.Local.ServerURL
+	}
+	if src.ML.Local.ServerBin != "" {
+		dst.ML.Local.ServerBin = src.ML.Local.ServerBin
+	}
+	if src.ML.Cloud.Enabled {
+		dst.ML.Cloud.Enabled = true
+	}
+	if src.ML.Cloud.BaseURL != "" {
+		dst.ML.Cloud.BaseURL = src.ML.Cloud.BaseURL
+	}
+	if src.ML.Cloud.APIKey != "" {
+		dst.ML.Cloud.APIKey = src.ML.Cloud.APIKey
 	}
 }
 

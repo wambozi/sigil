@@ -100,6 +100,8 @@ func run() error {
 		return cmdTask(*socketPath, args)
 	case "day":
 		return cmdDay(*socketPath)
+	case "ml":
+		return cmdML(*socketPath, args)
 	default:
 		return fmt.Errorf("unknown command %q — run sigilctl -help", cmd)
 	}
@@ -1121,6 +1123,102 @@ func cmdDay(socketPath string) error {
 				t.Branch, status, t.DurationMin, t.Files, t.Commits, t.TestRuns-t.TestFails, t.TestRuns)
 		}
 		w.Flush()
+	}
+	return nil
+}
+
+// --- ML commands -----------------------------------------------------------
+
+func cmdML(socketPath string, args []string) error {
+	if len(args) == 0 {
+		return cmdMLStatus(socketPath)
+	}
+	switch args[0] {
+	case "status":
+		return cmdMLStatus(socketPath)
+	case "train":
+		return cmdMLTrain(socketPath)
+	case "predict":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: sigilctl ml predict <endpoint> [key=value ...]")
+		}
+		return cmdMLPredict(socketPath, args[1], args[2:])
+	default:
+		return fmt.Errorf("unknown ml subcommand %q — use: status, train, predict", args[0])
+	}
+}
+
+func cmdMLStatus(socketPath string) error {
+	resp, err := call(socketPath, "ml-status", nil)
+	if err != nil {
+		return err
+	}
+	if !resp.OK {
+		return fmt.Errorf("daemon error: %s", resp.Error)
+	}
+	var s struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(resp.Payload, &s); err != nil {
+		return fmt.Errorf("decode: %w", err)
+	}
+	fmt.Printf("ML engine: %s\n", s.Status)
+	return nil
+}
+
+func cmdMLTrain(socketPath string) error {
+	resp, err := call(socketPath, "ml-train", nil)
+	if err != nil {
+		return err
+	}
+	if !resp.OK {
+		return fmt.Errorf("daemon error: %s", resp.Error)
+	}
+	fmt.Println("Training triggered")
+	return nil
+}
+
+func cmdMLPredict(socketPath string, endpoint string, kvPairs []string) error {
+	features := make(map[string]any)
+	for _, kv := range kvPairs {
+		parts := strings.SplitN(kv, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		// Try to parse as number.
+		if f, err := strconv.ParseFloat(parts[1], 64); err == nil {
+			features[parts[0]] = f
+		} else {
+			features[parts[0]] = parts[1]
+		}
+	}
+
+	resp, err := call(socketPath, "ml-predict", map[string]any{
+		"endpoint": endpoint,
+		"features": features,
+	})
+	if err != nil {
+		return err
+	}
+	if !resp.OK {
+		return fmt.Errorf("daemon error: %s", resp.Error)
+	}
+
+	var pred struct {
+		Endpoint  string         `json:"endpoint"`
+		Result    map[string]any `json:"result"`
+		Routing   string         `json:"routing"`
+		LatencyMS int64          `json:"latency_ms"`
+	}
+	if err := json.Unmarshal(resp.Payload, &pred); err != nil {
+		return fmt.Errorf("decode: %w", err)
+	}
+
+	fmt.Printf("Endpoint:  %s\n", pred.Endpoint)
+	fmt.Printf("Routing:   %s\n", pred.Routing)
+	fmt.Printf("Latency:   %dms\n", pred.LatencyMS)
+	for k, v := range pred.Result {
+		fmt.Printf("  %s: %v\n", k, v)
 	}
 	return nil
 }
