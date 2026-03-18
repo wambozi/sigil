@@ -13,7 +13,8 @@ _sigild_prompt_cmd() {
     _cmd="$(HISTTIMEFORMAT='' history 1 | sed 's/^[[:space:]]*[0-9]*[[:space:]]*//')"
     [[ -z "$_cmd" ]] && return 0
 
-    local _sock="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/sigild.sock"
+    local _runtime="${XDG_RUNTIME_DIR:-${TMPDIR:-/run/user/$(id -u)}}"
+    local _sock="${_runtime}/sigild.sock"
     [[ ! -S "$_sock" ]] && return 0
 
     local _cmd_json="${_cmd//\\/\\\\}"

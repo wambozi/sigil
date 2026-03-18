@@ -21,6 +21,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	goruntime "runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -979,11 +980,16 @@ func defaultDBPath() string {
 }
 
 func defaultSocketPath() string {
-	runtime := os.Getenv("XDG_RUNTIME_DIR")
-	if runtime == "" {
-		runtime = fmt.Sprintf("/run/user/%d", os.Getuid())
+	if dir := os.Getenv("XDG_RUNTIME_DIR"); dir != "" {
+		return filepath.Join(dir, "sigild.sock")
 	}
-	return filepath.Join(runtime, "sigild.sock")
+	// Linux: /run/user/<uid> is the conventional runtime dir.
+	// macOS: /run doesn't exist — use os.TempDir() which returns
+	// the per-user $TMPDIR (e.g. /var/folders/xx/.../T/).
+	if goruntime.GOOS == "darwin" {
+		return filepath.Join(os.TempDir(), "sigild.sock")
+	}
+	return fmt.Sprintf("/run/user/%d/sigild.sock", os.Getuid())
 }
 
 func homeDir() string {

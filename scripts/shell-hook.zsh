@@ -14,7 +14,8 @@ _sigild_precmd() {
     _sigild_cmd="${_sigild_cmd##[[:space:]]}"
     [[ -z "$_sigild_cmd" ]] && return 0
 
-    local _sigild_sock="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/sigild.sock"
+    local _sigild_runtime="${XDG_RUNTIME_DIR:-${TMPDIR:-/run/user/$(id -u)}}"
+    local _sigild_sock="${_sigild_runtime}/sigild.sock"
     [[ ! -S "$_sigild_sock" ]] && return 0
 
     # Escape cmd and cwd for embedding in JSON (replace \ then ")
