@@ -30,6 +30,23 @@ type FleetReport struct {
 	LocalRoutingRatio    float64        `json:"local_routing_ratio"`
 	BuildSuccessRate     float64        `json:"build_success_rate"`
 	TotalEvents          int            `json:"total_events"`
+
+	// Task lifecycle metrics
+	TasksCompleted     int                `json:"tasks_completed"`
+	TasksStarted       int                `json:"tasks_started"`
+	AvgTaskDurationMin float64            `json:"avg_task_duration_min"`
+	StuckRate          float64            `json:"stuck_rate"`
+	PhaseDistribution  map[string]float64 `json:"phase_distribution"`
+
+	// Quality & speed
+	AvgQualityScore     int     `json:"avg_quality_score"`
+	QualityDegradations int     `json:"quality_degradation_events"`
+	AvgSpeedScore       float64 `json:"avg_speed_score"`
+
+	// ML metrics
+	MLEnabled      bool `json:"ml_enabled"`
+	MLPredictions  int  `json:"ml_predictions"`
+	MLRetrainCount int  `json:"ml_retrain_count"`
 }
 
 // RoutingPolicy defines centralized routing and model restrictions
@@ -253,6 +270,32 @@ func (r *Reporter) computeReport(ctx context.Context) (FleetReport, error) {
 	// Build success rate from terminal events
 	report.BuildSuccessRate = r.computeBuildSuccessRate(ctx, since)
 
+	// Task lifecycle metrics
+	report.PhaseDistribution = make(map[string]float64)
+	taskMetrics, err := r.store.QueryTaskMetrics(ctx, since)
+	if err != nil {
+		r.log.Warn("fleet reporter: query task metrics", "err", err)
+	} else {
+		report.TasksCompleted = taskMetrics.TasksCompleted
+		report.TasksStarted = taskMetrics.TasksStarted
+		report.AvgTaskDurationMin = taskMetrics.AvgDurationMin
+		report.StuckRate = taskMetrics.StuckRate
+		report.PhaseDistribution = taskMetrics.PhaseDistribution
+	}
+
+	// Speed score from completed tasks
+	report.AvgSpeedScore = r.computeSpeedScore(ctx, since)
+
+	// ML metrics
+	mlStats, err := r.store.QueryMLStats(ctx, since)
+	if err != nil {
+		r.log.Warn("fleet reporter: query ml stats", "err", err)
+	} else {
+		report.MLPredictions = mlStats.Predictions
+		report.MLRetrainCount = mlStats.RetrainCount
+		report.MLEnabled = mlStats.Predictions > 0
+	}
+
 	return report, nil
 }
 
@@ -307,6 +350,37 @@ func (r *Reporter) computeBuildSuccessRate(ctx context.Context, since time.Time)
 		return 0
 	}
 	return float64(successes) / float64(builds)
+}
+
+// computeSpeedScore calculates a weighted average of edits-per-minute across
+// completed tasks for the current day. Tasks with more files carry more weight.
+func (r *Reporter) computeSpeedScore(ctx context.Context, since time.Time) float64 {
+	tasks, err := r.store.QueryTasksByDate(ctx, time.Now())
+	if err != nil {
+		return 0
+	}
+	var totalScore, totalWeight float64
+	for _, t := range tasks {
+		if t.CompletedAt == nil || len(t.Files) == 0 {
+			continue
+		}
+		duration := t.CompletedAt.Sub(t.StartedAt).Minutes()
+		if duration < 1 {
+			continue
+		}
+		totalEdits := 0
+		for _, n := range t.Files {
+			totalEdits += n
+		}
+		score := float64(totalEdits) / duration
+		weight := float64(len(t.Files))
+		totalScore += score * weight
+		totalWeight += weight
+	}
+	if totalWeight == 0 {
+		return 0
+	}
+	return totalScore / totalWeight
 }
 
 // isBuildCommand returns true if the command looks like a build or test invocation.

@@ -62,6 +62,40 @@ export interface ComplianceData {
   date_range_to: string;
 }
 
+export interface TasksData {
+  view: string;
+  data: Array<{
+    date: string;
+    avg_completed: number;
+    avg_started: number;
+    avg_duration: number;
+    stuck_rate: number;
+    avg_speed: number;
+  }>;
+}
+
+export interface QualityData {
+  view: string;
+  data: Array<{
+    date: string;
+    avg_quality: number;
+    total_degradations: number;
+  }>;
+}
+
+export interface MLData {
+  view: string;
+  data: Array<{
+    date: string;
+    ml_nodes: number;
+    total_nodes: number;
+    ml_speed: number | null;
+    non_ml_speed: number | null;
+    total_predictions: number;
+    total_retrains: number;
+  }>;
+}
+
 export interface OverviewData {
   view: string;
   data: Array<{
@@ -89,6 +123,18 @@ export function fetchCost(orgId?: string, from?: string, to?: string) {
 
 export function fetchCompliance(orgId?: string, from?: string, to?: string) {
   return fetchAPI<ComplianceData>("/api/v1/metrics", { view: "compliance", org_id: orgId || "", from: from || "", to: to || "" });
+}
+
+export function fetchTasks(orgId?: string, from?: string, to?: string) {
+  return fetchAPI<TasksData>("/api/v1/metrics", { view: "tasks", org_id: orgId || "", from: from || "", to: to || "" });
+}
+
+export function fetchQuality(orgId?: string, from?: string, to?: string) {
+  return fetchAPI<QualityData>("/api/v1/metrics", { view: "quality", org_id: orgId || "", from: from || "", to: to || "" });
+}
+
+export function fetchML(orgId?: string, from?: string, to?: string) {
+  return fetchAPI<MLData>("/api/v1/metrics", { view: "ml", org_id: orgId || "", from: from || "", to: to || "" });
 }
 
 export function fetchOverview(orgId?: string, from?: string, to?: string) {

@@ -118,6 +118,24 @@ func (_m *MockReadWriter) InsertFeedback(ctx context.Context, suggestionID int64
 	return r0
 }
 
+// InsertMLEvent provides a mock function with given fields: ctx, kind, endpoint, routing, latencyMS
+func (_m *MockReadWriter) InsertMLEvent(ctx context.Context, kind string, endpoint string, routing string, latencyMS int64) error {
+	ret := _m.Called(ctx, kind, endpoint, routing, latencyMS)
+
+	if len(ret) == 0 {
+		panic("no return value specified for InsertMLEvent")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, int64) error); ok {
+		r0 = rf(ctx, kind, endpoint, routing, latencyMS)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
 // InsertPattern provides a mock function with given fields: ctx, kind, summary
 func (_m *MockReadWriter) InsertPattern(ctx context.Context, kind string, summary interface{}) error {
 	ret := _m.Called(ctx, kind, summary)
@@ -162,6 +180,24 @@ func (_m *MockReadWriter) InsertSuggestion(ctx context.Context, sg store.Suggest
 	}
 
 	return r0, r1
+}
+
+// InsertTask provides a mock function with given fields: ctx, t
+func (_m *MockReadWriter) InsertTask(ctx context.Context, t store.TaskRecord) error {
+	ret := _m.Called(ctx, t)
+
+	if len(ret) == 0 {
+		panic("no return value specified for InsertTask")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, store.TaskRecord) error); ok {
+		r0 = rf(ctx, t)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
 }
 
 // MarkActionUndone provides a mock function with given fields: ctx, actionID
@@ -212,6 +248,36 @@ func (_m *MockReadWriter) QueryAIInteractions(ctx context.Context, since time.Ti
 	return r0, r1
 }
 
+// QueryCurrentTask provides a mock function with given fields: ctx
+func (_m *MockReadWriter) QueryCurrentTask(ctx context.Context) (*store.TaskRecord, error) {
+	ret := _m.Called(ctx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for QueryCurrentTask")
+	}
+
+	var r0 *store.TaskRecord
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context) (*store.TaskRecord, error)); ok {
+		return rf(ctx)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context) *store.TaskRecord); ok {
+		r0 = rf(ctx)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*store.TaskRecord)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context) error); ok {
+		r1 = rf(ctx)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // QueryEvents provides a mock function with given fields: ctx, kind, n
 func (_m *MockReadWriter) QueryEvents(ctx context.Context, kind event.Kind, n int) ([]event.Event, error) {
 	ret := _m.Called(ctx, kind, n)
@@ -242,6 +308,36 @@ func (_m *MockReadWriter) QueryEvents(ctx context.Context, kind event.Kind, n in
 	return r0, r1
 }
 
+// QueryGitEvents provides a mock function with given fields: ctx, since
+func (_m *MockReadWriter) QueryGitEvents(ctx context.Context, since time.Time) ([]event.Event, error) {
+	ret := _m.Called(ctx, since)
+
+	if len(ret) == 0 {
+		panic("no return value specified for QueryGitEvents")
+	}
+
+	var r0 []event.Event
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, time.Time) ([]event.Event, error)); ok {
+		return rf(ctx, since)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, time.Time) []event.Event); ok {
+		r0 = rf(ctx, since)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]event.Event)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, time.Time) error); ok {
+		r1 = rf(ctx, since)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // QueryHyprlandEvents provides a mock function with given fields: ctx, since
 func (_m *MockReadWriter) QueryHyprlandEvents(ctx context.Context, since time.Time) ([]event.Event, error) {
 	ret := _m.Called(ctx, since)
@@ -261,6 +357,34 @@ func (_m *MockReadWriter) QueryHyprlandEvents(ctx context.Context, since time.Ti
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]event.Event)
 		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, time.Time) error); ok {
+		r1 = rf(ctx, since)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// QueryMLStats provides a mock function with given fields: ctx, since
+func (_m *MockReadWriter) QueryMLStats(ctx context.Context, since time.Time) (store.MLStats, error) {
+	ret := _m.Called(ctx, since)
+
+	if len(ret) == 0 {
+		panic("no return value specified for QueryMLStats")
+	}
+
+	var r0 store.MLStats
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, time.Time) (store.MLStats, error)); ok {
+		return rf(ctx, since)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, time.Time) store.MLStats); ok {
+		r0 = rf(ctx, since)
+	} else {
+		r0 = ret.Get(0).(store.MLStats)
 	}
 
 	if rf, ok := ret.Get(1).(func(context.Context, time.Time) error); ok {
@@ -406,6 +530,94 @@ func (_m *MockReadWriter) QuerySuggestions(ctx context.Context, status store.Sug
 	return r0, r1
 }
 
+// QueryTaskHistory provides a mock function with given fields: ctx, since, limit
+func (_m *MockReadWriter) QueryTaskHistory(ctx context.Context, since time.Time, limit int) ([]store.TaskRecord, error) {
+	ret := _m.Called(ctx, since, limit)
+
+	if len(ret) == 0 {
+		panic("no return value specified for QueryTaskHistory")
+	}
+
+	var r0 []store.TaskRecord
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, time.Time, int) ([]store.TaskRecord, error)); ok {
+		return rf(ctx, since, limit)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, time.Time, int) []store.TaskRecord); ok {
+		r0 = rf(ctx, since, limit)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]store.TaskRecord)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, time.Time, int) error); ok {
+		r1 = rf(ctx, since, limit)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// QueryTaskMetrics provides a mock function with given fields: ctx, since
+func (_m *MockReadWriter) QueryTaskMetrics(ctx context.Context, since time.Time) (store.TaskMetrics, error) {
+	ret := _m.Called(ctx, since)
+
+	if len(ret) == 0 {
+		panic("no return value specified for QueryTaskMetrics")
+	}
+
+	var r0 store.TaskMetrics
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, time.Time) (store.TaskMetrics, error)); ok {
+		return rf(ctx, since)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, time.Time) store.TaskMetrics); ok {
+		r0 = rf(ctx, since)
+	} else {
+		r0 = ret.Get(0).(store.TaskMetrics)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, time.Time) error); ok {
+		r1 = rf(ctx, since)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// QueryTasksByDate provides a mock function with given fields: ctx, date
+func (_m *MockReadWriter) QueryTasksByDate(ctx context.Context, date time.Time) ([]store.TaskRecord, error) {
+	ret := _m.Called(ctx, date)
+
+	if len(ret) == 0 {
+		panic("no return value specified for QueryTasksByDate")
+	}
+
+	var r0 []store.TaskRecord
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, time.Time) ([]store.TaskRecord, error)); ok {
+		return rf(ctx, date)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, time.Time) []store.TaskRecord); ok {
+		r0 = rf(ctx, date)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]store.TaskRecord)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, time.Time) error); ok {
+		r1 = rf(ctx, date)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // QueryTerminalEvents provides a mock function with given fields: ctx, since
 func (_m *MockReadWriter) QueryTerminalEvents(ctx context.Context, since time.Time) ([]event.Event, error) {
 	ret := _m.Called(ctx, since)
@@ -507,6 +719,24 @@ func (_m *MockReadWriter) UpdateSuggestionStatus(ctx context.Context, id int64, 
 	var r0 error
 	if rf, ok := ret.Get(0).(func(context.Context, int64, store.SuggestionStatus) error); ok {
 		r0 = rf(ctx, id, status)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// UpdateTask provides a mock function with given fields: ctx, t
+func (_m *MockReadWriter) UpdateTask(ctx context.Context, t store.TaskRecord) error {
+	ret := _m.Called(ctx, t)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateTask")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, store.TaskRecord) error); ok {
+		r0 = rf(ctx, t)
 	} else {
 		r0 = ret.Error(0)
 	}

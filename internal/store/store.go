@@ -41,6 +41,8 @@ type EventReader interface {
 	QueryTaskHistory(ctx context.Context, since time.Time, limit int) ([]TaskRecord, error)
 	QueryTasksByDate(ctx context.Context, date time.Time) ([]TaskRecord, error)
 	QueryGitEvents(ctx context.Context, since time.Time) ([]event.Event, error)
+	QueryTaskMetrics(ctx context.Context, since time.Time) (TaskMetrics, error)
+	QueryMLStats(ctx context.Context, since time.Time) (MLStats, error)
 }
 
 // EventWriter is the write subset of Store used by the collector and notifier.
@@ -55,6 +57,7 @@ type EventWriter interface {
 	MarkActionUndone(ctx context.Context, actionID string) error
 	InsertTask(ctx context.Context, t TaskRecord) error
 	UpdateTask(ctx context.Context, t TaskRecord) error
+	InsertMLEvent(ctx context.Context, kind, endpoint, routing string, latencyMS int64) error
 }
 
 // ReadWriter combines EventReader and EventWriter for components that need both.
@@ -88,6 +91,21 @@ func Open(path string) (*Store, error) {
 // Close releases the underlying database connection.
 func (s *Store) Close() error {
 	return s.db.Close()
+}
+
+// TaskMetrics holds aggregated task lifecycle metrics for fleet reporting.
+type TaskMetrics struct {
+	TasksCompleted    int
+	TasksStarted      int
+	AvgDurationMin    float64
+	StuckRate         float64
+	PhaseDistribution map[string]float64 // phase → percentage of time
+}
+
+// MLStats holds aggregated ML usage metrics for fleet reporting.
+type MLStats struct {
+	Predictions  int
+	RetrainCount int
 }
 
 // InsertEvent persists a raw observation event.
@@ -700,6 +718,86 @@ func (s *Store) QueryGitEvents(ctx context.Context, since time.Time) ([]event.Ev
 	return s.queryEventsSince(ctx, event.KindGit, since)
 }
 
+// InsertMLEvent persists an ML event (prediction, retrain, etc.).
+func (s *Store) InsertMLEvent(ctx context.Context, kind, endpoint, routing string, latencyMS int64) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO ml_events (kind, endpoint, routing, latency_ms, ts) VALUES (?, ?, ?, ?, ?)`,
+		kind, endpoint, routing, latencyMS, time.Now().UnixMilli(),
+	)
+	return err
+}
+
+// QueryTaskMetrics computes aggregated task lifecycle metrics since the given time.
+func (s *Store) QueryTaskMetrics(ctx context.Context, since time.Time) (TaskMetrics, error) {
+	sinceMS := since.UnixMilli()
+	var m TaskMetrics
+
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM tasks WHERE started_at >= ?`, sinceMS,
+	).Scan(&m.TasksStarted)
+	if err != nil {
+		return m, fmt.Errorf("store: query task metrics (started): %w", err)
+	}
+
+	err = s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM tasks WHERE completed_at IS NOT NULL AND completed_at >= ?`, sinceMS,
+	).Scan(&m.TasksCompleted)
+	if err != nil {
+		return m, fmt.Errorf("store: query task metrics (completed): %w", err)
+	}
+
+	var avgDur sql.NullFloat64
+	err = s.db.QueryRowContext(ctx,
+		`SELECT AVG((last_active - started_at) / 60000.0) FROM tasks
+		 WHERE completed_at IS NOT NULL AND completed_at >= ?`, sinceMS,
+	).Scan(&avgDur)
+	if err != nil {
+		return m, fmt.Errorf("store: query task metrics (avg duration): %w", err)
+	}
+	if avgDur.Valid {
+		m.AvgDurationMin = avgDur.Float64
+	}
+
+	// Approximate stuck rate: tasks with test_fails >= 3 / total started.
+	var stuckCount int
+	err = s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM tasks WHERE started_at >= ? AND test_fails >= 3`, sinceMS,
+	).Scan(&stuckCount)
+	if err != nil {
+		return m, fmt.Errorf("store: query task metrics (stuck): %w", err)
+	}
+	if m.TasksStarted > 0 {
+		m.StuckRate = float64(stuckCount) / float64(m.TasksStarted)
+	}
+
+	// TODO: track phase time in task record to compute real distribution.
+	m.PhaseDistribution = make(map[string]float64)
+
+	return m, nil
+}
+
+// QueryMLStats computes aggregated ML usage metrics since the given time.
+func (s *Store) QueryMLStats(ctx context.Context, since time.Time) (MLStats, error) {
+	sinceMS := since.UnixMilli()
+	var st MLStats
+
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM ml_events WHERE kind = 'prediction' AND ts >= ?`, sinceMS,
+	).Scan(&st.Predictions)
+	if err != nil {
+		return st, fmt.Errorf("store: query ml stats (predictions): %w", err)
+	}
+
+	err = s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM ml_events WHERE kind = 'retrain' AND ts >= ?`, sinceMS,
+	).Scan(&st.RetrainCount)
+	if err != nil {
+		return st, fmt.Errorf("store: query ml stats (retrain): %w", err)
+	}
+
+	return st, nil
+}
+
 // scanTaskRecord scans a single task row from a *sql.Row.
 func scanTaskRecord(row *sql.Row) (*TaskRecord, error) {
 	var (
@@ -843,7 +941,17 @@ CREATE TABLE IF NOT EXISTS tasks (
     test_fails   INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_phase ON tasks (phase);
-CREATE INDEX IF NOT EXISTS idx_tasks_started ON tasks (started_at);`
+CREATE INDEX IF NOT EXISTS idx_tasks_started ON tasks (started_at);
+
+CREATE TABLE IF NOT EXISTS ml_events (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind       TEXT    NOT NULL,
+    endpoint   TEXT    NOT NULL,
+    routing    TEXT    NOT NULL,
+    latency_ms INTEGER NOT NULL,
+    ts         INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ml_events_ts ON ml_events(ts);`
 
 	_, err := db.Exec(schema)
 	return err
@@ -854,7 +962,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_started ON tasks (started_at);`
 // Purge deletes all rows from all tables and then removes the SQLite database
 // file from disk.  The Store must not be used after calling Purge.
 func (s *Store) Purge() error {
-	tables := []string{"tasks", "feedback", "suggestions", "patterns", "ai_interactions", "events"}
+	tables := []string{"ml_events", "tasks", "feedback", "suggestions", "patterns", "ai_interactions", "events"}
 	for _, t := range tables {
 		if _, err := s.db.Exec("DELETE FROM " + t); err != nil {
 			return fmt.Errorf("store: purge table %s: %w", t, err)

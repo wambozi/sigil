@@ -82,5 +82,28 @@ CREATE INDEX IF NOT EXISTS idx_policies_org ON policies(org_id);
 	if err != nil {
 		return fmt.Errorf("run migrations: %w", err)
 	}
+
+	// v2 migration: task, quality, and ML metrics
+	v2 := `
+ALTER TABLE daily_metrics ADD COLUMN IF NOT EXISTS tasks_completed INTEGER DEFAULT 0;
+ALTER TABLE daily_metrics ADD COLUMN IF NOT EXISTS tasks_started INTEGER DEFAULT 0;
+ALTER TABLE daily_metrics ADD COLUMN IF NOT EXISTS avg_task_duration_min REAL DEFAULT 0;
+ALTER TABLE daily_metrics ADD COLUMN IF NOT EXISTS stuck_rate REAL DEFAULT 0;
+ALTER TABLE daily_metrics ADD COLUMN IF NOT EXISTS phase_distribution JSONB DEFAULT '{}';
+ALTER TABLE daily_metrics ADD COLUMN IF NOT EXISTS avg_quality_score SMALLINT DEFAULT 0;
+ALTER TABLE daily_metrics ADD COLUMN IF NOT EXISTS quality_degradation_events INTEGER DEFAULT 0;
+ALTER TABLE daily_metrics ADD COLUMN IF NOT EXISTS avg_speed_score REAL DEFAULT 0;
+ALTER TABLE daily_metrics ADD COLUMN IF NOT EXISTS ml_enabled BOOLEAN DEFAULT FALSE;
+ALTER TABLE daily_metrics ADD COLUMN IF NOT EXISTS ml_predictions INTEGER DEFAULT 0;
+ALTER TABLE daily_metrics ADD COLUMN IF NOT EXISTS ml_retrain_count INTEGER DEFAULT 0;
+`
+	_, err2 := pool.Exec(ctx, v2)
+	if err2 != nil {
+		// ALTER TABLE ADD COLUMN IF NOT EXISTS may fail on older PostgreSQL;
+		// log but don't fail startup.
+		// Actually this is PostgreSQL 9.6+ feature, should be fine.
+		return fmt.Errorf("run v2 migrations: %w", err2)
+	}
+
 	return nil
 }

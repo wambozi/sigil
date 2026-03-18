@@ -3,10 +3,13 @@ import { AdoptionView } from "./views/AdoptionView";
 import { VelocityView } from "./views/VelocityView";
 import { CostView } from "./views/CostView";
 import { ComplianceView } from "./views/ComplianceView";
+import { TasksView } from "./views/TasksView";
+import { QualityView } from "./views/QualityView";
+import { MLView } from "./views/MLView";
 import { AuthProvider, useAuth } from "./auth/AuthProvider";
 import { Login } from "./auth/Login";
 
-type View = "adoption" | "velocity" | "cost" | "compliance";
+type View = "adoption" | "velocity" | "cost" | "compliance" | "tasks" | "quality" | "ml";
 
 function Dashboard() {
   const { user, logout } = useAuth();
@@ -33,6 +36,15 @@ function Dashboard() {
           <button onClick={() => setView("compliance")} class={view === "compliance" ? "active" : ""}>
             Compliance
           </button>
+          <button onClick={() => setView("tasks")} class={view === "tasks" ? "active" : ""}>
+            Tasks
+          </button>
+          <button onClick={() => setView("quality")} class={view === "quality" ? "active" : ""}>
+            Quality
+          </button>
+          <button onClick={() => setView("ml")} class={view === "ml" ? "active" : ""}>
+            ML
+          </button>
           <button onClick={logout}>Sign Out</button>
         </nav>
       </header>
@@ -41,6 +53,9 @@ function Dashboard() {
         {view === "velocity" && <VelocityView />}
         {view === "cost" && <CostView />}
         {view === "compliance" && <ComplianceView />}
+        {view === "tasks" && <TasksView />}
+        {view === "quality" && <QualityView />}
+        {view === "ml" && <MLView />}
       </main>
     </div>
   );

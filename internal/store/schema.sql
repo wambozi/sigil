@@ -58,3 +58,16 @@ CREATE TABLE IF NOT EXISTS tasks (
 
 CREATE INDEX IF NOT EXISTS idx_tasks_phase ON tasks (phase);
 CREATE INDEX IF NOT EXISTS idx_tasks_started ON tasks (started_at);
+
+-- ML event log.  Tracks predictions, retrains, and other model lifecycle
+-- events for fleet-level ML usage reporting.
+CREATE TABLE IF NOT EXISTS ml_events (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind       TEXT    NOT NULL,          -- "prediction" | "retrain" | ...
+    endpoint   TEXT    NOT NULL,          -- model endpoint or name
+    routing    TEXT    NOT NULL,          -- "local" | "cloud"
+    latency_ms INTEGER NOT NULL,
+    ts         INTEGER NOT NULL           -- Unix milliseconds
+);
+
+CREATE INDEX IF NOT EXISTS idx_ml_events_ts ON ml_events(ts);

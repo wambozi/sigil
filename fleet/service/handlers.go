@@ -20,14 +20,25 @@ type handlers struct {
 
 // FleetReport mirrors the daemon's fleet.FleetReport type.
 type FleetReport struct {
-	NodeID               string         `json:"node_id"`
-	Timestamp            time.Time      `json:"timestamp"`
-	AIQueryCounts        map[string]int `json:"ai_query_counts"`
-	SuggestionAcceptRate float64        `json:"suggestion_accept_rate"`
-	AdoptionTier         int            `json:"adoption_tier"`
-	LocalRoutingRatio    float64        `json:"local_routing_ratio"`
-	BuildSuccessRate     float64        `json:"build_success_rate"`
-	TotalEvents          int            `json:"total_events"`
+	NodeID               string             `json:"node_id"`
+	Timestamp            time.Time          `json:"timestamp"`
+	AIQueryCounts        map[string]int     `json:"ai_query_counts"`
+	SuggestionAcceptRate float64            `json:"suggestion_accept_rate"`
+	AdoptionTier         int                `json:"adoption_tier"`
+	LocalRoutingRatio    float64            `json:"local_routing_ratio"`
+	BuildSuccessRate     float64            `json:"build_success_rate"`
+	TotalEvents          int                `json:"total_events"`
+	TasksCompleted       int                `json:"tasks_completed"`
+	TasksStarted         int                `json:"tasks_started"`
+	AvgTaskDurationMin   float64            `json:"avg_task_duration_min"`
+	StuckRate            float64            `json:"stuck_rate"`
+	PhaseDistribution    map[string]float64 `json:"phase_distribution"`
+	AvgQualityScore      int                `json:"avg_quality_score"`
+	QualityDegradations  int                `json:"quality_degradation_events"`
+	AvgSpeedScore        float64            `json:"avg_speed_score"`
+	MLEnabled            bool               `json:"ml_enabled"`
+	MLPredictions        int                `json:"ml_predictions"`
+	MLRetrainCount       int                `json:"ml_retrain_count"`
 }
 
 // handleIngestReport receives a FleetReport and upserts it into daily_metrics.
@@ -51,22 +62,31 @@ func (h *handlers) handleIngestReport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	queryCounts, _ := json.Marshal(report.AIQueryCounts)
+	phaseDistribution, _ := json.Marshal(report.PhaseDistribution)
 	date := report.Timestamp.Format("2006-01-02")
 
 	_, err := h.db.Exec(r.Context(), `
 		INSERT INTO daily_metrics (node_id, date, ai_query_counts, suggestion_accept_rate,
-			adoption_tier, local_routing_ratio, build_success_rate, total_events)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			adoption_tier, local_routing_ratio, build_success_rate, total_events,
+			tasks_completed, tasks_started, avg_task_duration_min, stuck_rate,
+			phase_distribution, avg_quality_score, quality_degradation_events,
+			avg_speed_score, ml_enabled, ml_predictions, ml_retrain_count)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
 		ON CONFLICT (node_id, date) DO UPDATE SET
-			ai_query_counts = $3,
-			suggestion_accept_rate = $4,
-			adoption_tier = $5,
-			local_routing_ratio = $6,
-			build_success_rate = $7,
-			total_events = $8,
+			ai_query_counts = $3, suggestion_accept_rate = $4,
+			adoption_tier = $5, local_routing_ratio = $6,
+			build_success_rate = $7, total_events = $8,
+			tasks_completed = $9, tasks_started = $10,
+			avg_task_duration_min = $11, stuck_rate = $12,
+			phase_distribution = $13, avg_quality_score = $14,
+			quality_degradation_events = $15, avg_speed_score = $16,
+			ml_enabled = $17, ml_predictions = $18, ml_retrain_count = $19,
 			received_at = NOW()
 	`, report.NodeID, date, queryCounts, report.SuggestionAcceptRate,
-		report.AdoptionTier, report.LocalRoutingRatio, report.BuildSuccessRate, report.TotalEvents)
+		report.AdoptionTier, report.LocalRoutingRatio, report.BuildSuccessRate, report.TotalEvents,
+		report.TasksCompleted, report.TasksStarted, report.AvgTaskDurationMin, report.StuckRate,
+		phaseDistribution, report.AvgQualityScore, report.QualityDegradations,
+		report.AvgSpeedScore, report.MLEnabled, report.MLPredictions, report.MLRetrainCount)
 
 	if err != nil {
 		h.log.Error("ingest report", "err", err)
@@ -106,6 +126,12 @@ func (h *handlers) handleQueryMetrics(w http.ResponseWriter, r *http.Request) {
 		result, err = h.queryCost(r, orgID, from, to)
 	case "compliance":
 		result, err = h.queryCompliance(r, orgID, from, to)
+	case "tasks":
+		result, err = h.queryTaskVelocity(r, orgID, from, to)
+	case "quality":
+		result, err = h.queryQuality(r, orgID, from, to)
+	case "ml":
+		result, err = h.queryMLEffectiveness(r, orgID, from, to)
 	default:
 		result, err = h.queryOverview(r, orgID, from, to)
 	}
@@ -301,6 +327,124 @@ func (h *handlers) queryCompliance(r *http.Request, orgID, from, to string) (any
 		"date_range_from": from,
 		"date_range_to":   to,
 	}, nil
+}
+
+// queryTaskVelocity returns task completion and duration metrics over time.
+func (h *handlers) queryTaskVelocity(r *http.Request, orgID, from, to string) (any, error) {
+	rows, err := h.db.Query(r.Context(), `
+		SELECT date,
+			AVG(tasks_completed) as avg_completed,
+			AVG(tasks_started) as avg_started,
+			AVG(avg_task_duration_min) as avg_duration,
+			AVG(stuck_rate) as avg_stuck_rate,
+			AVG(avg_speed_score) as avg_speed
+		FROM daily_metrics
+		WHERE date >= $1 AND date <= $2
+		GROUP BY date ORDER BY date
+	`, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	type taskRow struct {
+		Date         string  `json:"date"`
+		AvgCompleted float64 `json:"avg_completed"`
+		AvgStarted   float64 `json:"avg_started"`
+		AvgDuration  float64 `json:"avg_duration"`
+		StuckRate    float64 `json:"stuck_rate"`
+		AvgSpeed     float64 `json:"avg_speed"`
+	}
+
+	var results []taskRow
+	for rows.Next() {
+		var tr taskRow
+		var date time.Time
+		if err := rows.Scan(&date, &tr.AvgCompleted, &tr.AvgStarted, &tr.AvgDuration,
+			&tr.StuckRate, &tr.AvgSpeed); err != nil {
+			return nil, err
+		}
+		tr.Date = date.Format("2006-01-02")
+		results = append(results, tr)
+	}
+	return map[string]any{"view": "tasks", "data": results}, rows.Err()
+}
+
+// queryQuality returns quality score and degradation metrics over time.
+func (h *handlers) queryQuality(r *http.Request, orgID, from, to string) (any, error) {
+	rows, err := h.db.Query(r.Context(), `
+		SELECT date,
+			AVG(avg_quality_score) as avg_quality,
+			SUM(quality_degradation_events) as total_degradations
+		FROM daily_metrics
+		WHERE date >= $1 AND date <= $2
+		GROUP BY date ORDER BY date
+	`, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	type qualityRow struct {
+		Date              string  `json:"date"`
+		AvgQuality        float64 `json:"avg_quality"`
+		TotalDegradations int64   `json:"total_degradations"`
+	}
+
+	var results []qualityRow
+	for rows.Next() {
+		var qr qualityRow
+		var date time.Time
+		if err := rows.Scan(&date, &qr.AvgQuality, &qr.TotalDegradations); err != nil {
+			return nil, err
+		}
+		qr.Date = date.Format("2006-01-02")
+		results = append(results, qr)
+	}
+	return map[string]any{"view": "quality", "data": results}, rows.Err()
+}
+
+// queryMLEffectiveness returns ML adoption and effectiveness metrics over time.
+func (h *handlers) queryMLEffectiveness(r *http.Request, orgID, from, to string) (any, error) {
+	rows, err := h.db.Query(r.Context(), `
+		SELECT date,
+			COUNT(*) FILTER (WHERE ml_enabled) as ml_nodes,
+			COUNT(*) as total_nodes,
+			AVG(CASE WHEN ml_enabled THEN avg_speed_score ELSE NULL END) as ml_speed,
+			AVG(CASE WHEN NOT ml_enabled THEN avg_speed_score ELSE NULL END) as non_ml_speed,
+			SUM(ml_predictions) as total_predictions,
+			SUM(ml_retrain_count) as total_retrains
+		FROM daily_metrics
+		WHERE date >= $1 AND date <= $2
+		GROUP BY date ORDER BY date
+	`, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	type mlRow struct {
+		Date             string   `json:"date"`
+		MLNodes          int      `json:"ml_nodes"`
+		TotalNodes       int      `json:"total_nodes"`
+		MLSpeed          *float64 `json:"ml_speed"`
+		NonMLSpeed       *float64 `json:"non_ml_speed"`
+		TotalPredictions int64    `json:"total_predictions"`
+		TotalRetrains    int64    `json:"total_retrains"`
+	}
+
+	var results []mlRow
+	for rows.Next() {
+		var mr mlRow
+		var date time.Time
+		if err := rows.Scan(&date, &mr.MLNodes, &mr.TotalNodes, &mr.MLSpeed,
+			&mr.NonMLSpeed, &mr.TotalPredictions, &mr.TotalRetrains); err != nil {
+			return nil, err
+		}
+		mr.Date = date.Format("2006-01-02")
+		results = append(results, mr)
+	}
+	return map[string]any{"view": "ml", "data": results}, rows.Err()
 }
 
 // handleHealthz returns a simple health check response.

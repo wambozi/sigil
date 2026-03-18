@@ -90,6 +90,24 @@ func (_m *MockEventWriter) InsertFeedback(ctx context.Context, suggestionID int6
 	return r0
 }
 
+// InsertMLEvent provides a mock function with given fields: ctx, kind, endpoint, routing, latencyMS
+func (_m *MockEventWriter) InsertMLEvent(ctx context.Context, kind string, endpoint string, routing string, latencyMS int64) error {
+	ret := _m.Called(ctx, kind, endpoint, routing, latencyMS)
+
+	if len(ret) == 0 {
+		panic("no return value specified for InsertMLEvent")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, int64) error); ok {
+		r0 = rf(ctx, kind, endpoint, routing, latencyMS)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
 // InsertPattern provides a mock function with given fields: ctx, kind, summary
 func (_m *MockEventWriter) InsertPattern(ctx context.Context, kind string, summary interface{}) error {
 	ret := _m.Called(ctx, kind, summary)
@@ -136,6 +154,24 @@ func (_m *MockEventWriter) InsertSuggestion(ctx context.Context, sg store.Sugges
 	return r0, r1
 }
 
+// InsertTask provides a mock function with given fields: ctx, t
+func (_m *MockEventWriter) InsertTask(ctx context.Context, t store.TaskRecord) error {
+	ret := _m.Called(ctx, t)
+
+	if len(ret) == 0 {
+		panic("no return value specified for InsertTask")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, store.TaskRecord) error); ok {
+		r0 = rf(ctx, t)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
 // MarkActionUndone provides a mock function with given fields: ctx, actionID
 func (_m *MockEventWriter) MarkActionUndone(ctx context.Context, actionID string) error {
 	ret := _m.Called(ctx, actionID)
@@ -165,6 +201,24 @@ func (_m *MockEventWriter) UpdateSuggestionStatus(ctx context.Context, id int64,
 	var r0 error
 	if rf, ok := ret.Get(0).(func(context.Context, int64, store.SuggestionStatus) error); ok {
 		r0 = rf(ctx, id, status)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// UpdateTask provides a mock function with given fields: ctx, t
+func (_m *MockEventWriter) UpdateTask(ctx context.Context, t store.TaskRecord) error {
+	ret := _m.Called(ctx, t)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateTask")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, store.TaskRecord) error); ok {
+		r0 = rf(ctx, t)
 	} else {
 		r0 = ret.Error(0)
 	}
