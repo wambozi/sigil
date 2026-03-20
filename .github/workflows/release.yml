@@ -29,6 +29,9 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Sync embedded assets
+        run: make sync-assets
+
       - name: Build binaries
         env:
           GOOS: ${{ matrix.goos }}

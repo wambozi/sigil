@@ -57,19 +57,45 @@ something useful.
 
 ## Install
 
-```bash
-# One-line install
-curl -fsSL https://raw.githubusercontent.com/wambozi/sigil/main/scripts/install.sh | bash
+### Homebrew (macOS / Linux)
 
-# Or build from source
-git clone https://github.com/wambozi/sigil.git && cd sigil
-make build    # produces ./sigild and ./sigilctl
+```bash
+brew tap wambozi/sigil
+brew install sigil
+sigild init     # config, shell hooks, launchd (macOS) / systemd (Linux)
 ```
+
+After init, open a new terminal to activate the shell hook.
+
+### One-line install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/wambozi/sigil/main/scripts/install.sh | bash
+```
+
+### Build from source
+
+Requires Go 1.22+.
+
+```bash
+git clone https://github.com/wambozi/sigil.git && cd sigil
+make install    # builds, installs to $GOPATH/bin, prints next step
+sigild init     # config, shell hooks, launchd (macOS) / systemd (Linux)
+```
+
+> **Note:** make sure `$GOPATH/bin` (usually `~/go/bin`) is in your `PATH`.
+
+This creates:
+- `~/.config/sigil/config.toml` — daemon configuration
+- `~/.config/sigil/shell-hook.{zsh,bash}` — terminal integration
+- `~/.local/share/sigild/` — data directory
+- `~/.config/systemd/user/sigild.service` — auto-start (Linux only)
+
+Open a new shell (or `source ~/.zshrc`) to activate the hook.
 
 ## Quick Start
 
 ```bash
-sigild init          # config, shell hooks, systemd service
 sigilctl status      # daemon health check
 sigilctl tail        # stream live events as you work
 sigilctl patterns    # see what the daemon has learned

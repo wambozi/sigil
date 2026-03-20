@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/wambozi/sigil/internal/event"
@@ -482,7 +483,7 @@ func (d *Detector) checkFrequentFiles(ctx context.Context, since time.Time) ([]n
 	yesterdayCounts := make(map[string]int64)
 	for _, e := range allEvents {
 		path, _ := e.Payload["path"].(string)
-		if path == "" {
+		if path == "" || isNoisePath(path) {
 			continue
 		}
 		if !e.Timestamp.Before(todayStart) {
@@ -1151,6 +1152,36 @@ func cwdFromPayload(payload map[string]any) string {
 func exitCodeOrZero(payload map[string]any) int {
 	code, _ := event.ExitCodeFromPayload(payload)
 	return code
+}
+
+// noisePathComponents are directory names under $HOME that indicate tooling
+// artifacts rather than real development files.
+var noisePathComponents = []string{
+	"/.bun/", "/.npm/", "/.yarn/", "/.cargo/", "/.rustup/",
+	"/.local/", "/.Trash/", "/Library/",
+	"/.idea/", "/.vscode/",
+}
+
+// noiseBasenames are file basenames that are never interesting for pattern
+// detection regardless of where they live.
+var noiseBasenames = map[string]bool{
+	".DS_Store": true, ".localized": true,
+	".zsh_history": true, ".bash_history": true,
+	".claude.json": true,
+}
+
+// isNoisePath returns true if path looks like a tooling artifact or system file
+// rather than a development source file.
+func isNoisePath(path string) bool {
+	if noiseBasenames[filepath.Base(path)] {
+		return true
+	}
+	for _, comp := range noisePathComponents {
+		if strings.Contains(path, comp) {
+			return true
+		}
+	}
+	return false
 }
 
 // checkWindowContextSwitching uses Hyprland window focus events to detect

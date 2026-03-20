@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/wambozi/sigil/internal/assets"
 	"github.com/wambozi/sigil/internal/config"
 	"github.com/wambozi/sigil/internal/inference"
 )
@@ -34,26 +35,34 @@ func runInit() error {
 		fmt.Fprintf(os.Stderr, "  [warn] shell hook: %v\n", err)
 	}
 
-	// 2. Inference setup
+	// 2. Watch directories
+	watchDirs, repoDirs := setupWatchDirs(reader, home)
+
+	// 3. Inference setup
 	inferenceToml := setupInference(reader)
 
-	// 3. Fleet setup
+	// 4. Fleet setup
 	fleetToml := setupFleet(reader)
 
-	// 4. Config file
-	if err := installConfigWithInference(inferenceToml, fleetToml); err != nil {
+	// 5. Config file
+	if err := installConfigFile(watchDirs, repoDirs, inferenceToml, fleetToml); err != nil {
 		fmt.Fprintf(os.Stderr, "  [warn] config: %v\n", err)
 	}
 
-	// 5. Data directory
+	// 6. Data directory
 	if err := installDataDir(home); err != nil {
 		fmt.Fprintf(os.Stderr, "  [warn] data dir: %v\n", err)
 	}
 
-	// 6. Systemd service (Linux only)
-	if runtime.GOOS == "linux" {
+	// 7. System service (platform-specific auto-start)
+	switch runtime.GOOS {
+	case "linux":
 		if err := installSystemdService(home); err != nil {
 			fmt.Fprintf(os.Stderr, "  [warn] systemd: %v\n", err)
+		}
+	case "darwin":
+		if err := installLaunchdService(home); err != nil {
+			fmt.Fprintf(os.Stderr, "  [warn] launchd: %v\n", err)
 		}
 	}
 
@@ -112,31 +121,17 @@ func installShellHook(home string) error {
 	return nil
 }
 
-// copyEmbeddedHook copies a hook from the installed scripts location to dst.
-// It tries the executable directory first, then falls back to the repo root.
+// copyEmbeddedHook writes a shell hook from the embedded asset FS to dst.
 func copyEmbeddedHook(name, dst string) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 		return err
 	}
 
-	// Try to locate the hook relative to the running binary.
-	exe, _ := os.Executable()
-	candidates := []string{
-		filepath.Join(filepath.Dir(exe), "..", "scripts", name),
-		filepath.Join("/usr/local/share/sigil/scripts", name),
-		filepath.Join(filepath.Dir(exe), "..", "..", "scripts", name),
+	data, err := assets.FS.ReadFile("scripts/" + name)
+	if err != nil {
+		return fmt.Errorf("embedded asset scripts/%s: %w", name, err)
 	}
-
-	for _, src := range candidates {
-		data, err := os.ReadFile(src)
-		if err != nil {
-			continue
-		}
-		return os.WriteFile(dst, data, 0o644)
-	}
-	// Hook file not found — not fatal, just skip.
-	fmt.Printf("  [skip] %s not found (install manually to %s)\n", name, dst)
-	return nil
+	return os.WriteFile(dst, data, 0o644)
 }
 
 // promptYN asks a yes/no question and returns true for yes.
@@ -159,6 +154,127 @@ func promptString(reader *bufio.Reader, question, defaultVal string) string {
 		return defaultVal
 	}
 	return answer
+}
+
+// setupWatchDirs prompts for directories to watch and discovers git repos within them.
+func setupWatchDirs(reader *bufio.Reader, home string) (watchDirs, repoDirs []string) {
+	fmt.Println()
+	fmt.Println("--- Watch Directories ---")
+	fmt.Println("  Sigil watches directories for file edits and discovers git repos within them.")
+
+	defaultDir := filepath.Join(home, "code")
+	if _, err := os.Stat(defaultDir); err != nil {
+		// ~/code doesn't exist, try common alternatives
+		for _, candidate := range []string{"projects", "src", "workspace", "dev"} {
+			p := filepath.Join(home, candidate)
+			if _, err := os.Stat(p); err == nil {
+				defaultDir = p
+				break
+			}
+		}
+	}
+
+	input := promptString(reader,
+		fmt.Sprintf("  Directories to watch (comma-separated) [%s]:", toTildePath(defaultDir, home)),
+		toTildePath(defaultDir, home))
+
+	for _, raw := range strings.Split(input, ",") {
+		dir := strings.TrimSpace(raw)
+		if dir == "" {
+			continue
+		}
+		// Expand ~ for validation but store with ~ prefix
+		expanded := dir
+		if strings.HasPrefix(dir, "~/") {
+			expanded = filepath.Join(home, dir[2:])
+		}
+		if info, err := os.Stat(expanded); err != nil || !info.IsDir() {
+			fmt.Printf("  [warn] %s is not a valid directory, skipping\n", dir)
+			continue
+		}
+		watchDirs = append(watchDirs, dir)
+	}
+
+	if len(watchDirs) == 0 {
+		watchDirs = []string{toTildePath(defaultDir, home)}
+		fmt.Printf("  [info] using default: %s\n", watchDirs[0])
+	}
+
+	// Discover git repos within watch dirs
+	fmt.Println("  Scanning for git repositories...")
+	for _, dir := range watchDirs {
+		expanded := dir
+		if strings.HasPrefix(dir, "~/") {
+			expanded = filepath.Join(home, dir[2:])
+		}
+		repos := discoverRepoDirs(expanded, home)
+		repoDirs = append(repoDirs, repos...)
+	}
+
+	fmt.Printf("  [ok]   %d watch director%s, %d git repo%s discovered\n",
+		len(watchDirs), plural(len(watchDirs)),
+		len(repoDirs), plural(len(repoDirs)))
+
+	if len(repoDirs) > 0 && len(repoDirs) <= 10 {
+		for _, r := range repoDirs {
+			fmt.Printf("         %s\n", r)
+		}
+	} else if len(repoDirs) > 10 {
+		for _, r := range repoDirs[:5] {
+			fmt.Printf("         %s\n", r)
+		}
+		fmt.Printf("         ... and %d more\n", len(repoDirs)-5)
+	}
+
+	return watchDirs, repoDirs
+}
+
+// discoverRepoDirs walks root up to 3 levels deep looking for directories
+// containing a .git subdirectory. Returns paths with ~ prefix.
+func discoverRepoDirs(root, home string) []string {
+	var repos []string
+	maxDepth := strings.Count(root, string(filepath.Separator)) + 3
+
+	filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if !d.IsDir() {
+			return nil
+		}
+		// Limit depth
+		if strings.Count(path, string(filepath.Separator)) > maxDepth {
+			return filepath.SkipDir
+		}
+		// Skip noisy directories
+		name := d.Name()
+		if name == "node_modules" || name == "vendor" || name == ".cache" || name == ".venv" || name == "venv" {
+			return filepath.SkipDir
+		}
+		// Check for .git
+		gitDir := filepath.Join(path, ".git")
+		if info, err := os.Stat(gitDir); err == nil && info.IsDir() {
+			repos = append(repos, toTildePath(path, home))
+			return filepath.SkipDir // don't recurse into repos (no nested submodules)
+		}
+		return nil
+	})
+	return repos
+}
+
+// toTildePath replaces the home directory prefix with ~.
+func toTildePath(path, home string) string {
+	if strings.HasPrefix(path, home) {
+		return "~" + path[len(home):]
+	}
+	return path
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return "y"
+	}
+	return "ies"
 }
 
 // setupInference prompts the user about local and cloud inference.
@@ -259,8 +375,8 @@ func setupFleet(reader *bufio.Reader) string {
 	return fmt.Sprintf("[fleet]\nenabled = true\nendpoint = %q\n", endpoint)
 }
 
-// installConfigWithInference creates config.toml with inference and fleet sections.
-func installConfigWithInference(inferenceTOML, fleetTOML string) error {
+// installConfigFile creates config.toml with watch dirs, repo dirs, inference, and fleet sections.
+func installConfigFile(watchDirs, repoDirs []string, inferenceTOML, fleetTOML string) error {
 	cfgPath := config.DefaultPath()
 	if _, err := os.Stat(cfgPath); err == nil {
 		fmt.Printf("  [ok]   config already exists at %s\n", cfgPath)
@@ -271,25 +387,38 @@ func installConfigWithInference(inferenceTOML, fleetTOML string) error {
 		return fmt.Errorf("mkdir %s: %w", filepath.Dir(cfgPath), err)
 	}
 
-	configContent := fmt.Sprintf(`# Sigil daemon configuration
-# Generated by sigild init
+	var b strings.Builder
+	b.WriteString("# Sigil daemon configuration\n# Generated by sigild init\n\n")
+	b.WriteString("[daemon]\nlog_level = \"info\"\n")
 
-[daemon]
-log_level = "info"
+	if len(watchDirs) > 0 {
+		b.WriteString("watch_dirs = [")
+		if len(watchDirs) == 1 {
+			fmt.Fprintf(&b, "%q", watchDirs[0])
+		} else {
+			b.WriteString("\n")
+			for _, d := range watchDirs {
+				fmt.Fprintf(&b, "  %q,\n", d)
+			}
+		}
+		b.WriteString("]\n")
+	}
 
-[notifier]
-level = 2
-digest_time = "09:00"
+	if len(repoDirs) > 0 {
+		b.WriteString("repo_dirs = [\n")
+		for _, d := range repoDirs {
+			fmt.Fprintf(&b, "  %q,\n", d)
+		}
+		b.WriteString("]\n")
+	}
 
-%s
+	b.WriteString("\n[notifier]\nlevel = 2\ndigest_time = \"09:00\"\n\n")
+	b.WriteString(inferenceTOML)
+	b.WriteString("\n\n[retention]\nraw_event_days = 90\n\n")
+	b.WriteString(fleetTOML)
+	b.WriteString("\n")
 
-[retention]
-raw_event_days = 90
-
-%s
-`, inferenceTOML, fleetTOML)
-
-	if err := os.WriteFile(cfgPath, []byte(configContent), 0o600); err != nil {
+	if err := os.WriteFile(cfgPath, []byte(b.String()), 0o600); err != nil {
 		return fmt.Errorf("write %s: %w", cfgPath, err)
 	}
 	fmt.Printf("  [ok]   config written to %s\n", cfgPath)
@@ -319,28 +448,9 @@ func installSystemdService(home string) error {
 	}
 	dst := filepath.Join(unitDir, "sigild.service")
 
-	// Locate the bundled service file.
-	exe, _ := os.Executable()
-	candidates := []string{
-		filepath.Join(filepath.Dir(exe), "..", "deploy", "sigild.service"),
-		filepath.Join(filepath.Dir(exe), "..", "..", "deploy", "sigild.service"),
-		"/usr/local/share/sigil/sigild.service",
-	}
-	var src string
-	for _, c := range candidates {
-		if _, err := os.Stat(c); err == nil {
-			src = c
-			break
-		}
-	}
-	if src == "" {
-		fmt.Println("  [skip] sigild.service not found — copy deploy/sigild.service manually")
-		return nil
-	}
-
-	data, err := os.ReadFile(src)
+	data, err := assets.FS.ReadFile("deploy/sigild.service")
 	if err != nil {
-		return fmt.Errorf("read service file: %w", err)
+		return fmt.Errorf("embedded asset deploy/sigild.service: %w", err)
 	}
 	if err := os.WriteFile(dst, data, 0o644); err != nil {
 		return fmt.Errorf("write service file: %w", err)
@@ -359,6 +469,64 @@ func installSystemdService(home string) error {
 		} else {
 			fmt.Printf("  [ok]   %s\n", strings.Join(args, " "))
 		}
+	}
+	return nil
+}
+
+// installLaunchdService creates a LaunchAgent plist and loads it on macOS.
+func installLaunchdService(home string) error {
+	agentDir := filepath.Join(home, "Library", "LaunchAgents")
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
+		return fmt.Errorf("mkdir LaunchAgents: %w", err)
+	}
+	dst := filepath.Join(agentDir, "com.sigil.sigild.plist")
+
+	// Find the installed sigild binary.
+	exe, err := exec.LookPath("sigild")
+	if err != nil {
+		// Fall back to the current binary path.
+		exe, _ = os.Executable()
+	}
+
+	logDir := filepath.Join(home, ".local", "share", "sigild")
+	_ = os.MkdirAll(logDir, 0o700)
+
+	plist := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.sigil.sigild</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>%s</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>StandardOutPath</key>
+	<string>%s/sigild.log</string>
+	<key>StandardErrorPath</key>
+	<string>%s/sigild.log</string>
+	<key>ProcessType</key>
+	<string>Background</string>
+</dict>
+</plist>
+`, exe, logDir, logDir)
+
+	if err := os.WriteFile(dst, []byte(plist), 0o644); err != nil {
+		return fmt.Errorf("write plist: %w", err)
+	}
+	fmt.Printf("  [ok]   launchd plist written to %s\n", dst)
+
+	// Load the agent (unload first to avoid "already loaded" errors).
+	_ = exec.Command("launchctl", "unload", dst).Run()
+	out, loadErr := exec.Command("launchctl", "load", dst).CombinedOutput()
+	if loadErr != nil {
+		fmt.Printf("  [warn] launchctl load: %v — %s\n", loadErr, strings.TrimSpace(string(out)))
+	} else {
+		fmt.Printf("  [ok]   launchctl load %s\n", filepath.Base(dst))
 	}
 	return nil
 }

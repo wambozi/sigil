@@ -26,6 +26,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strconv"
 	"text/tabwriter"
 	"time"
@@ -517,11 +518,13 @@ func printEvents(events []event.Event) error {
 // --- Path helpers -----------------------------------------------------------
 
 func defaultSocketPath() string {
-	runtime := os.Getenv("XDG_RUNTIME_DIR")
-	if runtime == "" {
-		runtime = fmt.Sprintf("/run/user/%d", os.Getuid())
+	if dir := os.Getenv("XDG_RUNTIME_DIR"); dir != "" {
+		return filepath.Join(dir, "sigild.sock")
 	}
-	return filepath.Join(runtime, "sigild.sock")
+	if goruntime.GOOS == "darwin" {
+		return filepath.Join(os.TempDir(), "sigild.sock")
+	}
+	return fmt.Sprintf("/run/user/%d/sigild.sock", os.Getuid())
 }
 
 func defaultDBPath() string {

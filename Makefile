@@ -3,7 +3,7 @@ GO    := go
 
 COV_MIN := 50
 
-.PHONY: fmt vet test check build run status generate coverage
+.PHONY: fmt vet test check build install run status generate coverage sync-assets
 
 fmt:
 	$(GO) fmt ./...
@@ -21,9 +21,23 @@ generate:
 ## check runs fmt, vet, and test in sequence — use this before committing.
 check: fmt vet test
 
-build:
+build: sync-assets
 	$(GO) build ./cmd/sigild/
 	$(GO) build ./cmd/sigilctl/
+
+## sync-assets copies shell hooks and service files into the embed directory
+## so go:embed can bundle them into the binary.
+sync-assets:
+	@cp scripts/shell-hook.zsh  internal/assets/scripts/shell-hook.zsh
+	@cp scripts/shell-hook.bash internal/assets/scripts/shell-hook.bash
+	@cp deploy/sigild.service   internal/assets/deploy/sigild.service
+
+## install builds and installs sigild + sigilctl to $GOPATH/bin, then runs init.
+install: build
+	$(GO) install ./cmd/sigild/ ./cmd/sigilctl/
+	@echo ""
+	@echo "Installed to $$($(GO) env GOPATH)/bin/"
+	@echo "Run 'sigild init' to complete setup."
 
 ## run builds and starts sigild with the dev config, watching ~/workspace.
 ## Set SIGIL_CLOUD_API_KEY in your environment for cloud inference.
