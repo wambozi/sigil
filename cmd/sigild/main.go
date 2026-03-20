@@ -391,6 +391,29 @@ func run(cfg daemonConfig, log *slog.Logger) error {
 	}()
 	log.Info("plugin ingest listening", "addr", "127.0.0.1:7775")
 
+	// --- Plugin Manager -----------------------------------------------------
+	pluginMgr := plugin.NewManager("http://127.0.0.1:7775/api/v1/ingest", log)
+	for name, pcfg := range cfg.fileCfg.Plugins {
+		pluginMgr.Register(plugin.Config{
+			Name:         name,
+			Enabled:      pcfg.Enabled,
+			Binary:       pcfg.Binary,
+			Daemon:       pcfg.Daemon,
+			PollInterval: pcfg.PollInterval,
+			HealthURL:    pcfg.HealthURL,
+			Env:          pcfg.Env,
+		})
+	}
+	if err := pluginMgr.Start(ctx); err != nil {
+		log.Warn("plugin manager: start failed", "err", err)
+	}
+	defer pluginMgr.Stop()
+
+	// Plugin status socket handler (registered after manager is created).
+	srv.Handle("plugin-status", func(ctx context.Context, _ socket.Request) socket.Response {
+		return socket.Response{OK: true, Payload: socket.MarshalPayload(pluginMgr.Plugins())}
+	})
+
 	// --- Credential store (always initialised; handlers registered below) ---
 	credStore := network.NewCredentialStore()
 	credsPath := filepath.Join(networkDataDir(), "credentials.json")

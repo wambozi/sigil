@@ -16,13 +16,24 @@ import (
 // Zero values mean "use the built-in default" so callers can detect which
 // fields were actually set by the file.
 type Config struct {
-	Daemon    DaemonConfig    `toml:"daemon"`
-	Notifier  NotifierConfig  `toml:"notifier"`
-	Inference InferenceConfig `toml:"inference"`
-	ML        MLConfig        `toml:"ml"`
-	Retention RetentionConfig `toml:"retention"`
-	Fleet     FleetConfig     `toml:"fleet"`
-	Network   NetworkConfig   `toml:"network"`
+	Daemon    DaemonConfig               `toml:"daemon"`
+	Notifier  NotifierConfig             `toml:"notifier"`
+	Inference InferenceConfig            `toml:"inference"`
+	ML        MLConfig                   `toml:"ml"`
+	Plugins   map[string]PluginConfig    `toml:"plugins"`
+	Retention RetentionConfig            `toml:"retention"`
+	Fleet     FleetConfig                `toml:"fleet"`
+	Network   NetworkConfig              `toml:"network"`
+}
+
+// PluginConfig defines a single plugin's configuration.
+type PluginConfig struct {
+	Enabled      bool              `toml:"enabled"`
+	Binary       string            `toml:"binary"`
+	Daemon       bool              `toml:"daemon"`        // true = run as long-lived process
+	PollInterval string            `toml:"poll_interval"`
+	HealthURL    string            `toml:"health_url"`
+	Env          map[string]string `toml:"env"`
 }
 
 // MLConfig configures the ML prediction sidecar.
@@ -283,6 +294,11 @@ func merge(dst, src *Config) {
 	}
 	if len(src.Network.AllowedCredentials) > 0 {
 		dst.Network.AllowedCredentials = src.Network.AllowedCredentials
+	}
+
+	// Plugins (map — just replace entirely if set in file)
+	if len(src.Plugins) > 0 {
+		dst.Plugins = src.Plugins
 	}
 
 	// ML

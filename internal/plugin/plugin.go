@@ -45,6 +45,7 @@ type Config struct {
 	Name         string            `toml:"name"`          // plugin identifier
 	Enabled      bool              `toml:"enabled"`
 	Binary       string            `toml:"binary"`        // binary name (found via PATH) or absolute path
+	Daemon       bool              `toml:"daemon"`        // true = run as long-lived process, false = hook-only
 	PollInterval string            `toml:"poll_interval"` // for polling plugins (e.g. "5m")
 	HealthURL    string            `toml:"health_url"`    // optional health check URL
 	Env          map[string]string `toml:"env"`           // environment variables passed to plugin
@@ -90,6 +91,10 @@ func (m *Manager) Start(ctx context.Context) error {
 	for name, inst := range m.plugins {
 		if !inst.Config.Enabled {
 			m.log.Info("plugin: skipping disabled", "plugin", name)
+			continue
+		}
+		if !inst.Config.Daemon {
+			m.log.Info("plugin: hook-only, not starting as daemon", "plugin", name)
 			continue
 		}
 		if err := m.startPlugin(ctx, inst); err != nil {
@@ -173,6 +178,9 @@ func (m *Manager) startPlugin(ctx context.Context, inst *Instance) error {
 
 	args := []string{
 		"--sigil-ingest-url", m.ingestURL,
+	}
+	if cfg.PollInterval != "" {
+		args = append(args, "--poll-interval", cfg.PollInterval)
 	}
 
 	cmd := exec.CommandContext(ctx, bin, args...)
