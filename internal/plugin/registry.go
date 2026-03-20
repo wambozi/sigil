@@ -59,8 +59,8 @@ var registry = []RegistryEntry{
 		Version:     "v1",
 		Category:    "ai",
 		Language:    "go",
-		GoModule:    "github.com/alecfeeman/sigil-plugin-claude@latest",
-		BrewFormula: "alecfeeman/sigil/sigil-plugin-claude",
+		GoModule:    "", // ships with sigild — built from plugins/sigil-plugin-claude/
+		BrewFormula: "", // included in sigil brew formula
 		Binary:      "sigil-plugin-claude",
 		HasSetup:    true,
 	},

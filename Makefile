@@ -24,6 +24,7 @@ check: fmt vet test
 build: sync-assets
 	$(GO) build ./cmd/sigild/
 	$(GO) build ./cmd/sigilctl/
+	$(GO) build ./plugins/sigil-plugin-claude/
 
 ## sync-assets copies shell hooks and service files into the embed directory
 ## so go:embed can bundle them into the binary.
@@ -34,7 +35,7 @@ sync-assets:
 
 ## install builds and installs sigild + sigilctl to $GOPATH/bin, then runs init.
 install: build
-	$(GO) install ./cmd/sigild/ ./cmd/sigilctl/
+	$(GO) install ./cmd/sigild/ ./cmd/sigilctl/ ./plugins/sigil-plugin-claude/
 	@echo ""
 	@echo "Installed to $$($(GO) env GOPATH)/bin/"
 	@echo "Run 'sigild init' to complete setup."

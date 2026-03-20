@@ -17,11 +17,20 @@ const (
 )
 
 // Install downloads and installs a plugin by name using the preferred method.
-// Returns the installed binary path or an error.
+// Plugins that ship with sigild (GoModule == "") are already installed via make build.
 func Install(name string, method InstallMethod) error {
 	entry := Lookup(name)
 	if entry == nil {
 		return fmt.Errorf("unknown plugin %q — run 'sigilctl plugin list-available' to see options", name)
+	}
+
+	// Plugin ships with sigild — no separate install needed.
+	if entry.GoModule == "" && entry.BrewFormula == "" {
+		if IsInstalled(name) {
+			fmt.Printf("  [ok] %s ships with sigild (already in PATH)\n", entry.Binary)
+			return nil
+		}
+		return fmt.Errorf("%s ships with sigild but %q not found in PATH — reinstall sigild with 'make install'", name, entry.Binary)
 	}
 
 	switch method {
