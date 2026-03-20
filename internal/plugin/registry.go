@@ -86,12 +86,12 @@ var registry = []RegistryEntry{
 		Version:     "v1",
 		Category:    "scm",
 		Language:    "go",
-		GoModule:    "github.com/alecfeeman/sigil-plugin-github@latest",
-		BrewFormula: "alecfeeman/sigil/sigil-plugin-github",
+		GoModule:    "", // ships with sigild
+		BrewFormula: "",
 		Binary:      "sigil-plugin-github",
 		HasSetup:    false,
 		EnvVars: []EnvVarSpec{
-			{Name: "GITHUB_TOKEN", Description: "GitHub personal access token", Required: true, Secret: true},
+			{Name: "GITHUB_TOKEN", Description: "GitHub personal access token (or use gh auth)", Required: false, Secret: true},
 		},
 	},
 	{

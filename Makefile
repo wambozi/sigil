@@ -25,6 +25,7 @@ build: sync-assets
 	$(GO) build ./cmd/sigild/
 	$(GO) build ./cmd/sigilctl/
 	$(GO) build ./plugins/sigil-plugin-claude/
+	$(GO) build ./plugins/sigil-plugin-github/
 
 ## sync-assets copies shell hooks and service files into the embed directory
 ## so go:embed can bundle them into the binary.
@@ -35,7 +36,7 @@ sync-assets:
 
 ## install builds and installs sigild + sigilctl to $GOPATH/bin, then runs init.
 install: build
-	$(GO) install ./cmd/sigild/ ./cmd/sigilctl/ ./plugins/sigil-plugin-claude/
+	$(GO) install ./cmd/sigild/ ./cmd/sigilctl/ ./plugins/sigil-plugin-claude/ ./plugins/sigil-plugin-github/
 	@echo ""
 	@echo "Installed to $$($(GO) env GOPATH)/bin/"
 	@echo "Run 'sigild init' to complete setup."
