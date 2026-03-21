@@ -458,8 +458,24 @@ func run(cfg daemonConfig, log *slog.Logger) error {
 			return
 		}
 
+		// Check workflow state — respect flow state before interrupting.
+		ctx := context.Background()
+		wsPred, _ := db.QueryLatestPrediction(ctx, "suggest")
+		if wsPred != nil {
+			dominantState, _ := wsPred.Result["dominant_state"].(string)
+			focusScore, _ := wsPred.Result["focus_score"].(float64)
+
+			// Don't interrupt deep work with high focus.
+			if dominantState == "deep_work" && focusScore > 0.8 {
+				log.Info("transition suggestion: skipping — engineer in deep work",
+					"focus_score", focusScore)
+				return
+			}
+		}
+
 		// Build a query based on the transition.
 		var query string
+		confidence := notifier.ConfidenceModerate
 		switch {
 		case oldPhase != task.PhaseIdle && newPhase == task.PhaseIdle:
 			query = fmt.Sprintf(
@@ -473,12 +489,19 @@ func run(cfg daemonConfig, log *slog.Logger) error {
 					"What should they try? Check the recent errors and suggest a different approach. "+
 					"Be concise.",
 				t.Branch, filepath.Base(t.RepoRoot), t.TestFailures)
+
+			// Elevate urgency when blocked with negative momentum.
+			if wsPred != nil {
+				momentum, _ := wsPred.Result["momentum"].(float64)
+				if momentum < -0.5 {
+					confidence = notifier.ConfidenceStrong
+				}
+			}
 		default:
 			return
 		}
 
 		// Ask the LLM with MCP tools.
-		ctx := context.Background()
 		result, err := mcpRegistry.RunToolLoop(ctx, &mcpEngineAdapter{engine}, query)
 		if err != nil {
 			log.Warn("transition suggestion: LLM failed", "err", err)
@@ -487,7 +510,7 @@ func run(cfg daemonConfig, log *slog.Logger) error {
 
 		suggestion := notifier.Suggestion{
 			Category:   "task_transition",
-			Confidence: notifier.ConfidenceModerate,
+			Confidence: confidence,
 			Title:      "Sigil",
 			Body:       result.Answer,
 		}

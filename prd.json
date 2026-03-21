@@ -95,8 +95,8 @@
         "go build ./... passes"
       ],
       "priority": 6,
-      "passes": false,
-      "notes": "Add both the sigilctl command and the socket handler. The correction event is the highest-signal feedback for the ActivityClassifier."
+      "passes": true,
+      "notes": "Merged in PR #32"
     },
     {
       "id": "US-007",
