@@ -841,6 +841,26 @@ func registerHandlers(
 			return socket.Response{Error: fmt.Sprintf("insert feedback: %s", err)}
 		}
 
+		// Write ml_feedback event for sigil-ml learning loop.
+		accepted := p.Outcome == "accepted"
+		feedbackPayload := map[string]any{
+			"model":         "suggest",
+			"accepted":      accepted,
+			"suggestion_id": p.SuggestionID,
+		}
+		// Include current workflow state if available.
+		if wsPred, wsErr := db.QueryLatestPrediction(ctx, "suggest"); wsErr == nil && wsPred != nil {
+			if state, ok := wsPred.Result["dominant_state"].(string); ok {
+				feedbackPayload["state"] = state
+			}
+		}
+		_ = db.InsertEvent(ctx, event.Event{
+			Kind:      "ml_feedback",
+			Source:    "notifier",
+			Payload:   feedbackPayload,
+			Timestamp: time.Now(),
+		})
+
 		log.Info("feedback recorded", "suggestion_id", p.SuggestionID, "outcome", p.Outcome)
 		return socket.Response{OK: true, Payload: socket.MarshalPayload(map[string]any{"ok": true})}
 	})

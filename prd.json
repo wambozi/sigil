@@ -15,8 +15,8 @@
         "go vet ./... passes"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": "File: internal/mcp/tools.go around line 107. Change the models slice from the old list to the new one."
+      "passes": true,
+      "notes": "Merged in PR #30"
     },
     {
       "id": "US-002",
@@ -31,8 +31,8 @@
         "go build ./... passes"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": "File: internal/mcp/tools.go. Follow the existing tool registration pattern. The suggest model now contains workflow state, not just an action string."
+      "passes": true,
+      "notes": "Merged in PR #30"
     },
     {
       "id": "US-003",
@@ -47,8 +47,8 @@
         "go build ./... passes"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": "File: internal/mcp/tools.go. The activity model writes classified event summaries to ml_predictions with model='activity'."
+      "passes": true,
+      "notes": "Merged in PR #30"
     },
     {
       "id": "US-004",
@@ -63,7 +63,7 @@
       ],
       "priority": 4,
       "passes": false,
-      "notes": "File: internal/mcp/loop.go, the systemPrompt constant. Keep it concise — the LLM reads this on every query."
+      "notes": "File: internal/mcp/loop.go, the systemPrompt constant. Keep it concise \u2014 the LLM reads this on every query."
     },
     {
       "id": "US-005",
