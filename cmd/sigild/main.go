@@ -444,6 +444,89 @@ func run(cfg daemonConfig, log *slog.Logger) error {
 		return socket.Response{OK: true, Payload: socket.MarshalPayload(pluginMgr.Plugins())}
 	})
 
+	// --- Task transition → LLM suggestion → plugin action ------------------
+	taskTracker.OnTransition = func(oldPhase, newPhase task.Phase, t *task.Task) {
+		// Only act on significant transitions.
+		if newPhase != task.PhaseIdle && newPhase != task.PhaseStuck {
+			return
+		}
+
+		level := ntf.Level()
+
+		// Level 0-1: silent, no LLM call.
+		if level < notifier.LevelAmbient {
+			return
+		}
+
+		// Check workflow state — respect flow state before interrupting.
+		ctx := context.Background()
+		wsPred, _ := db.QueryLatestPrediction(ctx, "suggest")
+		if wsPred != nil {
+			dominantState, _ := wsPred.Result["dominant_state"].(string)
+			focusScore, _ := wsPred.Result["focus_score"].(float64)
+
+			// Don't interrupt deep work with high focus.
+			if dominantState == "deep_work" && focusScore > 0.8 {
+				log.Info("transition suggestion: skipping — engineer in deep work",
+					"focus_score", focusScore)
+				return
+			}
+		}
+
+		// Build a query based on the transition.
+		var query string
+		confidence := notifier.ConfidenceModerate
+		switch {
+		case oldPhase != task.PhaseIdle && newPhase == task.PhaseIdle:
+			query = fmt.Sprintf(
+				"The engineer just completed a task on branch '%s' in %s. "+
+					"What should they work on next? Check their sprint backlog, open PRs, and recent task history. "+
+					"Be concise — one paragraph max.",
+				t.Branch, filepath.Base(t.RepoRoot))
+		case newPhase == task.PhaseStuck:
+			query = fmt.Sprintf(
+				"The engineer is stuck on branch '%s' in %s — %d consecutive test failures. "+
+					"What should they try? Check the recent errors and suggest a different approach. "+
+					"Be concise.",
+				t.Branch, filepath.Base(t.RepoRoot), t.TestFailures)
+
+			// Elevate urgency when blocked with negative momentum.
+			if wsPred != nil {
+				momentum, _ := wsPred.Result["momentum"].(float64)
+				if momentum < -0.5 {
+					confidence = notifier.ConfidenceStrong
+				}
+			}
+		default:
+			return
+		}
+
+		// Ask the LLM with MCP tools.
+		result, err := mcpRegistry.RunToolLoop(ctx, &mcpEngineAdapter{engine}, query)
+		if err != nil {
+			log.Warn("transition suggestion: LLM failed", "err", err)
+			return
+		}
+
+		suggestion := notifier.Suggestion{
+			Category:   "task_transition",
+			Confidence: confidence,
+			Title:      "Sigil",
+			Body:       result.Answer,
+		}
+
+		// Level 3+: check if claude plugin can launch a session.
+		if level >= notifier.LevelConversational {
+			suggestion.ActionCmd = fmt.Sprintf(
+				`sigil-plugin-claude launch --prompt %q --cwd %q`,
+				result.Answer, t.RepoRoot)
+		}
+
+		ntf.Surface(suggestion)
+		log.Info("transition suggestion surfaced",
+			"phase", newPhase, "tools", result.ToolCallsMade, "level", level)
+	}
+
 	// --- Credential store (always initialised; handlers registered below) ---
 	credStore := network.NewCredentialStore()
 	credsPath := filepath.Join(networkDataDir(), "credentials.json")
@@ -781,7 +864,64 @@ func registerHandlers(
 			return socket.Response{Error: fmt.Sprintf("insert feedback: %s", err)}
 		}
 
+		// Write ml_feedback event for sigil-ml learning loop.
+		accepted := p.Outcome == "accepted"
+		feedbackPayload := map[string]any{
+			"model":         "suggest",
+			"accepted":      accepted,
+			"suggestion_id": p.SuggestionID,
+		}
+		// Include current workflow state if available.
+		if wsPred, wsErr := db.QueryLatestPrediction(ctx, "suggest"); wsErr == nil && wsPred != nil {
+			if state, ok := wsPred.Result["dominant_state"].(string); ok {
+				feedbackPayload["state"] = state
+			}
+		}
+		_ = db.InsertEvent(ctx, event.Event{
+			Kind:      "ml_feedback",
+			Source:    "notifier",
+			Payload:   feedbackPayload,
+			Timestamp: time.Now(),
+		})
+
 		log.Info("feedback recorded", "suggestion_id", p.SuggestionID, "outcome", p.Outcome)
+		return socket.Response{OK: true, Payload: socket.MarshalPayload(map[string]any{"ok": true})}
+	})
+
+	// correct — write an ml_correction event for a misclassified event.
+	// Payload: {"event_id": 12345, "correct_category": "researching"}
+	srv.Handle("correct", func(ctx context.Context, req socket.Request) socket.Response {
+		var p struct {
+			EventID         int64  `json:"event_id"`
+			CorrectCategory string `json:"correct_category"`
+		}
+		if err := json.Unmarshal(req.Payload, &p); err != nil {
+			return socket.Response{Error: "invalid payload: " + err.Error()}
+		}
+		if p.EventID <= 0 {
+			return socket.Response{Error: "event_id must be a positive integer"}
+		}
+		validCategories := map[string]bool{
+			"creating": true, "refining": true, "verifying": true, "navigating": true,
+			"researching": true, "integrating": true, "communicating": true, "idle": true,
+		}
+		if !validCategories[p.CorrectCategory] {
+			return socket.Response{Error: fmt.Sprintf("invalid category %q — valid: creating, refining, verifying, navigating, researching, integrating, communicating, idle", p.CorrectCategory)}
+		}
+
+		err := db.InsertEvent(ctx, event.Event{
+			Kind:   "ml_correction",
+			Source: "sigilctl",
+			Payload: map[string]any{
+				"event_id":         p.EventID,
+				"correct_category": p.CorrectCategory,
+			},
+			Timestamp: time.Now(),
+		})
+		if err != nil {
+			return socket.Response{Error: fmt.Sprintf("insert correction: %s", err)}
+		}
+		log.Info("correction recorded", "event_id", p.EventID, "category", p.CorrectCategory)
 		return socket.Response{OK: true, Payload: socket.MarshalPayload(map[string]any{"ok": true})}
 	})
 
@@ -1047,17 +1187,17 @@ func registerTaskHandlers(srv *socket.Server, tracker *task.Tracker, db *store.S
 
 		// Per-task breakdown and speed score accumulation.
 		type taskSummary struct {
-			Branch     string  `json:"branch"`
-			RepoRoot   string  `json:"repo_root"`
-			Phase      string  `json:"phase"`
-			DurationMin int    `json:"duration_min"`
-			Files      int     `json:"files"`
-			TotalEdits int     `json:"total_edits"`
-			Commits    int     `json:"commits"`
-			TestRuns   int     `json:"test_runs"`
-			TestFails  int     `json:"test_failures"`
-			Completed  bool    `json:"completed"`
-			SpeedScore float64 `json:"speed_score"` // size-weighted velocity
+			Branch      string  `json:"branch"`
+			RepoRoot    string  `json:"repo_root"`
+			Phase       string  `json:"phase"`
+			DurationMin int     `json:"duration_min"`
+			Files       int     `json:"files"`
+			TotalEdits  int     `json:"total_edits"`
+			Commits     int     `json:"commits"`
+			TestRuns    int     `json:"test_runs"`
+			TestFails   int     `json:"test_failures"`
+			Completed   bool    `json:"completed"`
+			SpeedScore  float64 `json:"speed_score"` // size-weighted velocity
 		}
 		var taskList []taskSummary
 		var speedScoreSum, speedWeightSum float64

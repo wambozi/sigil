@@ -9,9 +9,9 @@ import (
 
 // RoutingPolicy defines centralized routing and model restrictions.
 type RoutingPolicy struct {
-	RoutingMode      string   `json:"routing_mode"`
-	AllowedProviders []string `json:"allowed_providers"`
-	AllowedModelIDs  []string `json:"allowed_model_ids"`
+	RoutingMode      string    `json:"routing_mode"`
+	AllowedProviders []string  `json:"allowed_providers"`
+	AllowedModelIDs  []string  `json:"allowed_model_ids"`
 	EnforcedAt       time.Time `json:"enforced_at"`
 }
 

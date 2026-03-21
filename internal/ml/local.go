@@ -162,10 +162,12 @@ func (l *LocalBackend) Ping(ctx context.Context) error {
 // Stop terminates the managed subprocess.
 func (l *LocalBackend) Stop() error {
 	l.healthCfn()
-	l.mu.Lock()
-	defer l.mu.Unlock()
 
-	if !l.managed || l.proc == nil {
+	l.mu.Lock()
+	shouldStop := l.managed && l.proc != nil
+	l.mu.Unlock()
+
+	if !shouldStop {
 		return nil
 	}
 

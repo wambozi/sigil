@@ -5,16 +5,16 @@ package plugin
 
 // RegistryEntry describes a plugin available for installation.
 type RegistryEntry struct {
-	Name        string       `json:"name"`         // short identifier (e.g. "claude", "jira")
+	Name        string       `json:"name"` // short identifier (e.g. "claude", "jira")
 	Description string       `json:"description"`
-	Version     string       `json:"version"`       // roadmap version: "v1", "v2", "v3", "v4", "v5", "vX"
-	Category    string       `json:"category"`      // "ai", "scrum", "scm", "ci", "knowledge", "communication", "observability", "security", "ide"
-	Language    string       `json:"language"`       // "go", "shell", "python"
-	GoModule    string       `json:"go_module"`      // go install path (primary install method)
-	BrewFormula string       `json:"brew_formula"`   // homebrew formula (alternative)
-	Binary      string       `json:"binary"`         // expected binary name in PATH after install
-	HasSetup    bool         `json:"has_setup"`      // plugin binary supports "install" subcommand
-	EnvVars     []EnvVarSpec `json:"env_vars"`       // required/optional env vars for configuration
+	Version     string       `json:"version"`      // roadmap version: "v1", "v2", "v3", "v4", "v5", "vX"
+	Category    string       `json:"category"`     // "ai", "scrum", "scm", "ci", "knowledge", "communication", "observability", "security", "ide"
+	Language    string       `json:"language"`     // "go", "shell", "python"
+	GoModule    string       `json:"go_module"`    // go install path (primary install method)
+	BrewFormula string       `json:"brew_formula"` // homebrew formula (alternative)
+	Binary      string       `json:"binary"`       // expected binary name in PATH after install
+	HasSetup    bool         `json:"has_setup"`    // plugin binary supports "install" subcommand
+	EnvVars     []EnvVarSpec `json:"env_vars"`     // required/optional env vars for configuration
 }
 
 // EnvVarSpec describes an environment variable a plugin needs.
@@ -70,8 +70,8 @@ var registry = []RegistryEntry{
 		Version:     "v1",
 		Category:    "scrum",
 		Language:    "go",
-		GoModule:    "github.com/alecfeeman/sigil-plugin-jira@latest",
-		BrewFormula: "alecfeeman/sigil/sigil-plugin-jira",
+		GoModule:    "", // ships with sigild
+		BrewFormula: "",
 		Binary:      "sigil-plugin-jira",
 		HasSetup:    false,
 		EnvVars: []EnvVarSpec{
@@ -100,10 +100,21 @@ var registry = []RegistryEntry{
 		Version:     "v1",
 		Category:    "ide",
 		Language:    "go",
-		GoModule:    "github.com/alecfeeman/sigil-plugin-vscode@latest",
-		BrewFormula: "alecfeeman/sigil/sigil-plugin-vscode",
+		GoModule:    "", // ships with sigild
+		BrewFormula: "",
 		Binary:      "sigil-plugin-vscode",
 		HasSetup:    true,
+	},
+	{
+		Name:        "jetbrains",
+		Description: "JetBrains IDEs — PyCharm, GoLand, IntelliJ, WebStorm, all in one",
+		Version:     "v1",
+		Category:    "ide",
+		Language:    "go",
+		GoModule:    "", // ships with sigild
+		BrewFormula: "",
+		Binary:      "sigil-plugin-jetbrains",
+		HasSetup:    false,
 	},
 
 	// ── v2: Full Team Workflow ─────────────────────────────────────────
@@ -169,16 +180,6 @@ var registry = []RegistryEntry{
 			{Name: "GITLAB_URL", Description: "GitLab instance URL", Required: true},
 			{Name: "GITLAB_TOKEN", Description: "GitLab personal access token", Required: true, Secret: true},
 		},
-	},
-	{
-		Name:        "jetbrains",
-		Description: "JetBrains IDE active file, run configs, debug",
-		Version:     "v2",
-		Category:    "ide",
-		Language:    "go",
-		GoModule:    "github.com/alecfeeman/sigil-plugin-jetbrains@latest",
-		Binary:      "sigil-plugin-jetbrains",
-		HasSetup:    true,
 	},
 	{
 		Name:        "github-actions",

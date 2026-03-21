@@ -13,11 +13,22 @@ import (
 	"time"
 )
 
+// shortTempDir creates a temp directory under /tmp to keep Unix socket paths
+// within the 104-byte sun_path limit. macOS t.TempDir() paths are too long.
+func shortTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("/tmp", "sigil-test-*")
+	if err != nil {
+		t.Fatalf("mkdtemp: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	return dir
+}
+
 func startTestServer(t *testing.T) (*Server, string) {
 	t.Helper()
-	// Use a short path to stay within Unix socket path limits (108 chars).
-	dir := t.TempDir()
-	sockPath := filepath.Join(dir, "test.sock")
+	dir := shortTempDir(t)
+	sockPath := filepath.Join(dir, "s.sock")
 
 	log := newTestLogger()
 	srv := New(sockPath, log)
@@ -128,8 +139,8 @@ func TestServer_handlerReceivesPayload(t *testing.T) {
 }
 
 func TestServer_removesStaleSocketOnStart(t *testing.T) {
-	dir := t.TempDir()
-	sockPath := filepath.Join(dir, "stale.sock")
+	dir := shortTempDir(t)
+	sockPath := filepath.Join(dir, "s.sock")
 
 	// Create a stale file at the socket path.
 	if err := os.WriteFile(sockPath, []byte("stale"), 0o600); err != nil {
@@ -345,8 +356,8 @@ func TestServer_multipleRequestsSameConnection(t *testing.T) {
 }
 
 func TestServer_Stop(t *testing.T) {
-	dir := t.TempDir()
-	sockPath := filepath.Join(dir, "stop.sock")
+	dir := shortTempDir(t)
+	sockPath := filepath.Join(dir, "s.sock")
 
 	log := newTestLogger()
 	srv := New(sockPath, log)

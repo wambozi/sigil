@@ -16,21 +16,21 @@ import (
 // Zero values mean "use the built-in default" so callers can detect which
 // fields were actually set by the file.
 type Config struct {
-	Daemon    DaemonConfig               `toml:"daemon"`
-	Notifier  NotifierConfig             `toml:"notifier"`
-	Inference InferenceConfig            `toml:"inference"`
-	ML        MLConfig                   `toml:"ml"`
-	Plugins   map[string]PluginConfig    `toml:"plugins"`
-	Retention RetentionConfig            `toml:"retention"`
-	Fleet     FleetConfig                `toml:"fleet"`
-	Network   NetworkConfig              `toml:"network"`
+	Daemon    DaemonConfig            `toml:"daemon"`
+	Notifier  NotifierConfig          `toml:"notifier"`
+	Inference InferenceConfig         `toml:"inference"`
+	ML        MLConfig                `toml:"ml"`
+	Plugins   map[string]PluginConfig `toml:"plugins"`
+	Retention RetentionConfig         `toml:"retention"`
+	Fleet     FleetConfig             `toml:"fleet"`
+	Network   NetworkConfig           `toml:"network"`
 }
 
 // PluginConfig defines a single plugin's configuration.
 type PluginConfig struct {
 	Enabled      bool              `toml:"enabled"`
 	Binary       string            `toml:"binary"`
-	Daemon       bool              `toml:"daemon"`        // true = run as long-lived process
+	Daemon       bool              `toml:"daemon"` // true = run as long-lived process
 	PollInterval string            `toml:"poll_interval"`
 	HealthURL    string            `toml:"health_url"`
 	Env          map[string]string `toml:"env"`

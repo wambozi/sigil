@@ -24,9 +24,9 @@ const (
 
 // Prediction is the parsed response from an ML prediction endpoint.
 type Prediction struct {
-	Endpoint  string         `json:"endpoint"`  // e.g. "stuck", "suggest", "duration"
-	Result    map[string]any `json:"result"`     // endpoint-specific response
-	Routing   string         `json:"routing"`    // "local" or "cloud"
+	Endpoint  string         `json:"endpoint"` // e.g. "stuck", "suggest", "duration"
+	Result    map[string]any `json:"result"`   // endpoint-specific response
+	Routing   string         `json:"routing"`  // "local" or "cloud"
 	LatencyMS int64          `json:"latency_ms"`
 }
 
@@ -34,7 +34,7 @@ type Prediction struct {
 type TrainResult struct {
 	Trained    []string `json:"trained"`
 	Samples    int      `json:"samples"`
-	DurationMS int64   `json:"duration_ms"`
+	DurationMS int64    `json:"duration_ms"`
 }
 
 // Backend is implemented by each ML backend (local sidecar, cloud API).

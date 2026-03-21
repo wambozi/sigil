@@ -17,13 +17,31 @@ import (
 	"github.com/wambozi/sigil/internal/plugin"
 )
 
+// nonInteractive controls whether init skips all prompts and uses safe defaults.
+// Set via --non-interactive flag or SIGIL_NON_INTERACTIVE=1.
+var nonInteractive bool
+
 // runInit implements the "sigild init" subcommand.
 // It bootstraps everything a new user needs: shell hook, config file,
 // data directory, and (on Linux) the systemd user service.
+//
+// With --non-interactive (or SIGIL_NON_INTERACTIVE=1), it skips all prompts,
+// installs the shell hook and config with safe defaults, and exits. No network
+// access, no package installs, no service registration.
 func runInit() error {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("cannot determine home directory: %w", err)
+	}
+
+	// Check flag or env for non-interactive mode.
+	if os.Getenv("SIGIL_NON_INTERACTIVE") == "1" {
+		nonInteractive = true
+	}
+	for _, arg := range os.Args[2:] {
+		if arg == "--non-interactive" {
+			nonInteractive = true
+		}
 	}
 
 	reader := bufio.NewReader(os.Stdin)
@@ -34,6 +52,10 @@ func runInit() error {
 	// 1. Shell hook
 	if err := installShellHook(home); err != nil {
 		fmt.Fprintf(os.Stderr, "  [warn] shell hook: %v\n", err)
+	}
+
+	if nonInteractive {
+		return runInitNonInteractive(home)
 	}
 
 	// 2. Watch directories
@@ -71,6 +93,40 @@ func runInit() error {
 		if err := installLaunchdService(home); err != nil {
 			fmt.Fprintf(os.Stderr, "  [warn] launchd: %v\n", err)
 		}
+	}
+
+	fmt.Println()
+	fmt.Println("sigild init: done. Start a new shell or source your rc file to activate the hook.")
+	return nil
+}
+
+// runInitNonInteractive performs a minimal init with safe defaults:
+// shell hook, default config, data directory. No prompts, no network,
+// no package installs, no service registration.
+func runInitNonInteractive(home string) error {
+	fmt.Println("  [info] non-interactive mode — using defaults")
+
+	// Default watch dir: ~/code (or first existing common dir).
+	watchDir := filepath.Join(home, "code")
+	for _, candidate := range []string{"code", "projects", "src", "workspace", "dev"} {
+		p := filepath.Join(home, candidate)
+		if info, err := os.Stat(p); err == nil && info.IsDir() {
+			watchDir = p
+			break
+		}
+	}
+
+	watchDirs := []string{toTildePath(watchDir, home)}
+	inferenceToml := "[inference]\nmode = \"localfirst\"\n\n[inference.local]\nenabled = false\n\n[inference.cloud]\nenabled = false\n"
+	mlToml := "[ml]\nmode = \"disabled\"\n"
+	fleetToml := "[fleet]\nenabled = false\n"
+
+	if err := installConfigFile(watchDirs, nil, inferenceToml, mlToml, "", fleetToml); err != nil {
+		fmt.Fprintf(os.Stderr, "  [warn] config: %v\n", err)
+	}
+
+	if err := installDataDir(home); err != nil {
+		fmt.Fprintf(os.Stderr, "  [warn] data dir: %v\n", err)
 	}
 
 	fmt.Println()
