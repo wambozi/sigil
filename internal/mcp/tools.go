@@ -339,12 +339,12 @@ func RegisterPluginTools(reg *Registry, mgr *plugin.Manager, log *slog.Logger) {
 			statuses := mgr.Plugins()
 
 			type pluginInfo struct {
-				Name         string                `json:"name"`
-				Enabled      bool                  `json:"enabled"`
-				Running      bool                  `json:"running"`
-				Healthy      bool                  `json:"healthy"`
-				Actions      []plugin.PluginAction `json:"actions,omitempty"`
-				DataSources  []string              `json:"data_sources,omitempty"`
+				Name        string                `json:"name"`
+				Enabled     bool                  `json:"enabled"`
+				Running     bool                  `json:"running"`
+				Healthy     bool                  `json:"healthy"`
+				Actions     []plugin.PluginAction `json:"actions,omitempty"`
+				DataSources []string              `json:"data_sources,omitempty"`
 			}
 
 			var result []pluginInfo
