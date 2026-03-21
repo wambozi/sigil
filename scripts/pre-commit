@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Git pre-commit hook: auto-format all Go source files.
+# Installed by: make hooks
+
+export LC_ALL=C
+set -euo pipefail
+
+# Only act when there are staged Go files.
+if ! git diff --cached --name-only --diff-filter=ACM | grep -q '\.go$'; then
+    exit 0
+fi
+
+# Format everything (gofmt covers all modules, unlike go fmt ./...).
+gofmt -w .
+
+# Re-stage any files that were reformatted.
+git diff --name-only | grep '\.go$' | xargs -r git add || true

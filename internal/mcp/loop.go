@@ -57,8 +57,8 @@ type ToolEngine interface {
 
 // LoopResult holds the final output of a tool-calling loop.
 type LoopResult struct {
-	Answer        string
-	ToolCallsMade int
+	Answer         string
+	ToolCallsMade  int
 	TotalLatencyMS int64
 }
 

@@ -313,11 +313,11 @@ func (t *Tracker) predictStuck(ctx context.Context) float64 {
 	}
 
 	features := map[string]any{
-		"test_failure_count":        t.current.TestFailures,
-		"time_in_phase_sec":         time.Since(t.current.LastActivity).Seconds(),
-		"edit_velocity":             editVelocity,
-		"file_switch_rate":          fileSwitchRate,
-		"session_length_sec":        elapsed,
+		"test_failure_count":         t.current.TestFailures,
+		"time_in_phase_sec":          time.Since(t.current.LastActivity).Seconds(),
+		"edit_velocity":              editVelocity,
+		"file_switch_rate":           fileSwitchRate,
+		"session_length_sec":         elapsed,
 		"time_since_last_commit_sec": elapsed, // approximate
 	}
 

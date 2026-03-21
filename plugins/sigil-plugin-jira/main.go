@@ -119,7 +119,7 @@ type jiraIssue struct {
 			Name string `json:"name"`
 		} `json:"issuetype"`
 		Assignee struct {
-			DisplayName string `json:"displayName"`
+			DisplayName  string `json:"displayName"`
 			EmailAddress string `json:"emailAddress"`
 		} `json:"assignee"`
 		Reporter struct {

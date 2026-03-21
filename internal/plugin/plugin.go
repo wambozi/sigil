@@ -24,11 +24,11 @@ import (
 
 // Event is the normalized envelope for all plugin-produced data.
 type Event struct {
-	Plugin      string         `json:"plugin"`      // plugin name (e.g. "jira", "claude", "github")
-	Kind        string         `json:"kind"`         // event type (e.g. "story_update", "ai_turn", "pr_status")
+	Plugin      string         `json:"plugin"` // plugin name (e.g. "jira", "claude", "github")
+	Kind        string         `json:"kind"`   // event type (e.g. "story_update", "ai_turn", "pr_status")
 	Timestamp   time.Time      `json:"timestamp"`
-	Correlation Correlation    `json:"correlation"`  // links event to tasks/stories
-	Payload     map[string]any `json:"payload"`      // plugin-specific data
+	Correlation Correlation    `json:"correlation"` // links event to tasks/stories
+	Payload     map[string]any `json:"payload"`     // plugin-specific data
 }
 
 // Correlation links plugin events to Sigil tasks and external systems.
@@ -42,7 +42,7 @@ type Correlation struct {
 
 // Config defines how a plugin is configured in sigild's config.toml.
 type Config struct {
-	Name         string            `toml:"name"`          // plugin identifier
+	Name         string            `toml:"name"` // plugin identifier
 	Enabled      bool              `toml:"enabled"`
 	Binary       string            `toml:"binary"`        // binary name (found via PATH) or absolute path
 	Daemon       bool              `toml:"daemon"`        // true = run as long-lived process, false = hook-only
@@ -61,10 +61,10 @@ type Instance struct {
 
 // Manager starts, stops, and health-checks plugin processes.
 type Manager struct {
-	plugins    map[string]*Instance
-	ingestURL  string // URL plugins POST events to
-	log        *slog.Logger
-	mu         sync.RWMutex
+	plugins   map[string]*Instance
+	ingestURL string // URL plugins POST events to
+	log       *slog.Logger
+	mu        sync.RWMutex
 }
 
 // NewManager creates a plugin Manager.
@@ -101,7 +101,13 @@ func (m *Manager) Start(ctx context.Context) error {
 			m.log.Warn("plugin: failed to start", "plugin", name, "err", err)
 			continue
 		}
-		m.log.Info("plugin: started", "plugin", name, "pid", inst.proc.Pid)
+		inst.mu.Lock()
+		pid := 0
+		if inst.proc != nil {
+			pid = inst.proc.Pid
+		}
+		inst.mu.Unlock()
+		m.log.Info("plugin: started", "plugin", name, "pid", pid)
 	}
 
 	// Start health monitor.

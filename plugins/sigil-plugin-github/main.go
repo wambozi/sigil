@@ -88,8 +88,6 @@ func main() {
 		os.Exit(1)
 	}
 
-
-
 	fmt.Fprintf(os.Stderr, "sigil-plugin-github: polling every %s\n", pollInterval)
 
 	stop := make(chan os.Signal, 1)
@@ -300,19 +298,19 @@ func pollPRs(r ghRepo) {
 				"pr_id":     fmt.Sprintf("%d", pr.Number),
 			},
 			Payload: map[string]any{
-				"number":      pr.Number,
-				"title":       pr.Title,
-				"state":       pr.State,
-				"draft":       pr.Draft,
-				"url":         pr.HTMLURL,
-				"author":      pr.User.Login,
-				"mergeable":   pr.Mergeable,
-				"reviewers":   reviewers,
-				"labels":      labels,
-				"repo":        r.Owner + "/" + r.Repo,
-				"remote":      r.Remote,
-				"created_at":  pr.CreatedAt.Format(time.RFC3339),
-				"updated_at":  pr.UpdatedAt.Format(time.RFC3339),
+				"number":     pr.Number,
+				"title":      pr.Title,
+				"state":      pr.State,
+				"draft":      pr.Draft,
+				"url":        pr.HTMLURL,
+				"author":     pr.User.Login,
+				"mergeable":  pr.Mergeable,
+				"reviewers":  reviewers,
+				"labels":     labels,
+				"repo":       r.Owner + "/" + r.Repo,
+				"remote":     r.Remote,
+				"created_at": pr.CreatedAt.Format(time.RFC3339),
+				"updated_at": pr.UpdatedAt.Format(time.RFC3339),
 			},
 		})
 

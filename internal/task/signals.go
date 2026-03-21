@@ -12,14 +12,14 @@ import (
 type Signal int
 
 const (
-	SignalFileEdit    Signal = iota + 1 // a file was modified
-	SignalTestCmd                       // a test/build command was invoked
-	SignalTestPass                      // a test/build command exited 0
-	SignalTestFail                      // a test/build command exited non-zero
-	SignalCommit                        // a git commit was created
-	SignalBranchSwitch                  // HEAD changed to a different branch
-	SignalStaging                       // files were staged (git add)
-	SignalIdleTimeout                   // no activity for the configured window
+	SignalFileEdit     Signal = iota + 1 // a file was modified
+	SignalTestCmd                        // a test/build command was invoked
+	SignalTestPass                       // a test/build command exited 0
+	SignalTestFail                       // a test/build command exited non-zero
+	SignalCommit                         // a git commit was created
+	SignalBranchSwitch                   // HEAD changed to a different branch
+	SignalStaging                        // files were staged (git add)
+	SignalIdleTimeout                    // no activity for the configured window
 )
 
 // ClassifyEvent extracts a task-lifecycle Signal from a raw event.

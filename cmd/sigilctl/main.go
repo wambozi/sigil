@@ -33,8 +33,8 @@ import (
 	"time"
 
 	"github.com/wambozi/sigil/internal/event"
-	"github.com/wambozi/sigil/internal/plugin"
 	"github.com/wambozi/sigil/internal/inference"
+	"github.com/wambozi/sigil/internal/plugin"
 	"github.com/wambozi/sigil/internal/socket"
 	"github.com/wambozi/sigil/internal/store"
 )
@@ -1261,7 +1261,7 @@ func cmdPlugin(args []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Println("\nAdd this to your ~/.config/sigil/config.toml:\n")
+		fmt.Println("\nAdd this to your ~/.config/sigil/config.toml:")
 		fmt.Println(toml)
 		return nil
 	default:

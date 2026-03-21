@@ -6,9 +6,12 @@ result-*
 .direnv
 *.iso
 *.exe
+/bin/
 /sigilctl
 /sigild
+/sigil-plugin-*
 cover.out
+coverage.out
 dev.toml
 .specify/templates
 specs
@@ -17,3 +20,7 @@ node_modules
 extensions/vscode/out/
 *.vsix
 .idea/
+
+# Test helper binaries (built at test time by TestMain)
+internal/inference/testdata/fake_llama_server
+internal/inference/testdata/sigterm_ignore

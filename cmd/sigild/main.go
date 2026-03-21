@@ -1187,17 +1187,17 @@ func registerTaskHandlers(srv *socket.Server, tracker *task.Tracker, db *store.S
 
 		// Per-task breakdown and speed score accumulation.
 		type taskSummary struct {
-			Branch     string  `json:"branch"`
-			RepoRoot   string  `json:"repo_root"`
-			Phase      string  `json:"phase"`
-			DurationMin int    `json:"duration_min"`
-			Files      int     `json:"files"`
-			TotalEdits int     `json:"total_edits"`
-			Commits    int     `json:"commits"`
-			TestRuns   int     `json:"test_runs"`
-			TestFails  int     `json:"test_failures"`
-			Completed  bool    `json:"completed"`
-			SpeedScore float64 `json:"speed_score"` // size-weighted velocity
+			Branch      string  `json:"branch"`
+			RepoRoot    string  `json:"repo_root"`
+			Phase       string  `json:"phase"`
+			DurationMin int     `json:"duration_min"`
+			Files       int     `json:"files"`
+			TotalEdits  int     `json:"total_edits"`
+			Commits     int     `json:"commits"`
+			TestRuns    int     `json:"test_runs"`
+			TestFails   int     `json:"test_failures"`
+			Completed   bool    `json:"completed"`
+			SpeedScore  float64 `json:"speed_score"` // size-weighted velocity
 		}
 		var taskList []taskSummary
 		var speedScoreSum, speedWeightSum float64

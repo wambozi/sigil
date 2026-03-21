@@ -38,9 +38,9 @@ type PluginEvent struct {
 }
 
 var (
-	ingestURL    string
-	pollInterval time.Duration
-	lastWorkspace string
+	ingestURL       string
+	pollInterval    time.Duration
+	lastWorkspace   string
 	lastActiveFiles map[string]time.Time
 )
 
@@ -132,7 +132,7 @@ func pollRecentWorkspaces() {
 			"repo_root": workspace,
 		},
 		Payload: map[string]any{
-			"workspace": workspace,
+			"workspace":               workspace,
 			"total_recent_workspaces": len(storage.OpenedPathsList.Entries) + len(storage.OpenedPathsList.Workspaces3),
 		},
 	})
@@ -189,7 +189,7 @@ func pollRecentFiles() {
 		Kind:      "recent_files",
 		Timestamp: time.Now(),
 		Payload: map[string]any{
-			"new_files":   newFiles,
+			"new_files":    newFiles,
 			"total_recent": len(recent.Entries),
 		},
 	})
@@ -237,7 +237,7 @@ func pollExtensions() {
 		Kind:      "extensions",
 		Timestamp: time.Now(),
 		Payload: map[string]any{
-			"installed":     extensions,
+			"installed":       extensions,
 			"total_installed": len(entries),
 		},
 	})

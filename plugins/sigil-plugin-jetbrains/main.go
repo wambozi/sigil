@@ -327,8 +327,8 @@ type xmlComponent struct {
 }
 
 type xmlOption struct {
-	Name  string `xml:"name,attr"`
-	Value string `xml:"value,attr"`
+	Name  string  `xml:"name,attr"`
+	Value string  `xml:"value,attr"`
 	Map   *xmlMap `xml:"map"`
 }
 

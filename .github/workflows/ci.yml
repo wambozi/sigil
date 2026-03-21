@@ -21,19 +21,15 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Vet
-        run: go vet ./...
-
-      - name: Test
-        run: go test ./...
+      - name: Check (fmt, vet, lint, test -race)
+        run: make check
 
       - name: Build
         run: make build
 
       - name: Smoke test — sigild init
         run: |
-          # Run init non-interactively (answer "no" to all prompts)
-          printf 'n\nn\nn\n' | ./sigild init
+          ./bin/sigild init --non-interactive
 
           # Verify shell hook was written from embedded assets
           if [ -f "$HOME/.config/sigil/shell-hook.zsh" ] || [ -f "$HOME/.config/sigil/shell-hook.bash" ]; then

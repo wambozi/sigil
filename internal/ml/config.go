@@ -2,10 +2,10 @@ package ml
 
 // Config holds all ML engine configuration.
 type Config struct {
-	Mode          RoutingMode `toml:"mode"`
-	RetrainEvery  int         `toml:"retrain_every"` // retrain after N completed tasks (0 = manual only)
-	Local         LocalConfig `toml:"local"`
-	Cloud         CloudConfig `toml:"cloud"`
+	Mode         RoutingMode `toml:"mode"`
+	RetrainEvery int         `toml:"retrain_every"` // retrain after N completed tasks (0 = manual only)
+	Local        LocalConfig `toml:"local"`
+	Cloud        CloudConfig `toml:"cloud"`
 }
 
 // LocalConfig configures the local sigil-ml sidecar.

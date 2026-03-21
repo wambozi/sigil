@@ -104,11 +104,11 @@ type Notifier struct {
 // New creates a Notifier at the given level.
 func New(s SuggestionStore, level Level, log *slog.Logger) *Notifier {
 	return &Notifier{
-		level:            level,
-		store:            s,
-		platform:         newPlatform(log),
-		log:              log,
-		lastShownAt:      make(map[Level]time.Time),
+		level:             level,
+		store:             s,
+		platform:          newPlatform(log),
+		log:               log,
+		lastShownAt:       make(map[Level]time.Time),
 		recentSuggestions: make(map[string]time.Time),
 	}
 }
