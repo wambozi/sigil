@@ -29,7 +29,7 @@ func (p *darwinPlatform) Send(title, body string, _ bool) {
 	safeBody := strings.ReplaceAll(body, `"`, `\"`)
 
 	script := fmt.Sprintf(
-		`display notification %q with title %q`,
+		`display notification %q with title "Sigil" subtitle %q`,
 		safeBody, safeTitle,
 	)
 

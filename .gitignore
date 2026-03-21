@@ -16,3 +16,4 @@ vendor
 node_modules
 extensions/vscode/out/
 *.vsix
+.idea/

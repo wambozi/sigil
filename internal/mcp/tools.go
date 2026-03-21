@@ -104,10 +104,9 @@ func RegisterStoreTools(reg *Registry, s StoreReader) {
 				return string(b), nil
 			}
 
-			// No specific model — return predictions from the last 24h across all models.
+			// No specific model — return latest prediction for each known model.
 			since := time.Now().Add(-24 * time.Hour)
-			// Query a set of well-known models.
-			models := []string{"quality", "task_estimate", "context_switch", "productivity"}
+			models := []string{"activity", "suggest", "quality", "stuck", "duration"}
 			var all []store.PredictionRecord
 			for _, m := range models {
 				preds, err := s.QueryPredictions(ctx, m, since)
@@ -270,6 +269,51 @@ func RegisterStoreTools(reg *Registry, s StoreReader) {
 				return "", err
 			}
 			b, err := json.Marshal(tasks)
+			if err != nil {
+				return "", err
+			}
+			return string(b), nil
+		},
+	})
+
+	reg.Register(Tool{
+		Name: "get_workflow_state",
+		Description: "Returns the user's current workflow state including flow state " +
+			"probabilities (deep_work, shallow_work, exploring, blocked, winding_down), " +
+			"momentum, focus score, and activity breakdown. Use this to understand what " +
+			"the user is doing and how it's going before generating suggestions.",
+		Parameters: map[string]any{"type": "object", "properties": map[string]any{}},
+		Fn: func(ctx context.Context, _ json.RawMessage) (string, error) {
+			pred, err := s.QueryLatestPrediction(ctx, "suggest")
+			if err != nil {
+				return "", err
+			}
+			if pred == nil {
+				return `{"workflow_state": null, "note": "No workflow state prediction available yet. The ML sidecar may not be running or has not produced predictions."}`, nil
+			}
+			b, err := json.Marshal(pred)
+			if err != nil {
+				return "", err
+			}
+			return string(b), nil
+		},
+	})
+
+	reg.Register(Tool{
+		Name: "get_activity_stream",
+		Description: "Returns recent events classified by activity type (creating, " +
+			"refining, verifying, navigating, researching, integrating, communicating, " +
+			"idle). Shows what the user has been doing in the last few minutes.",
+		Parameters: map[string]any{"type": "object", "properties": map[string]any{}},
+		Fn: func(ctx context.Context, _ json.RawMessage) (string, error) {
+			pred, err := s.QueryLatestPrediction(ctx, "activity")
+			if err != nil {
+				return "", err
+			}
+			if pred == nil {
+				return `{"activity_stream": null, "note": "No activity classification available yet. The ML sidecar may not be running or has not produced classifications."}`, nil
+			}
+			b, err := json.Marshal(pred)
 			if err != nil {
 				return "", err
 			}

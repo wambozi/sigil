@@ -31,6 +31,10 @@ type MLPredictor interface {
 	Enabled() bool
 }
 
+// TransitionCallback is called on significant phase transitions.
+// The callback receives the old phase, new phase, and current task snapshot.
+type TransitionCallback func(oldPhase, newPhase Phase, task *Task)
+
 // Tracker maintains the current task state and processes events in real time.
 // It runs an event loop reading from a broadcast channel and updates the
 // store on every phase transition.
@@ -46,6 +50,10 @@ type Tracker struct {
 	dbPath         string
 	retrainEvery   int // retrain after N completed tasks (0 = disabled)
 	completedCount int // tasks completed since last retrain
+
+	// OnTransition is called on every phase change. Set by sigild to trigger
+	// LLM-generated suggestions on task completion, stuck detection, etc.
+	OnTransition TransitionCallback
 }
 
 // NewTracker creates a Tracker backed by the given store.
@@ -208,10 +216,15 @@ func (t *Tracker) Process(ctx context.Context, e event.Event) {
 		return
 	}
 
-	// Persist on phase change.
+	// Persist on phase change and fire callback.
 	if oldPhase != newPhase {
 		t.log.Info("task phase transition", "from", oldPhase, "to", newPhase, "repo", t.current.RepoRoot)
 		t.persist(ctx)
+
+		if t.OnTransition != nil {
+			snapshot := *t.current
+			go t.OnTransition(oldPhase, newPhase, &snapshot)
+		}
 	}
 }
 

@@ -56,17 +56,33 @@ var (
 )
 
 func main() {
+	// Subcommands: capabilities, create-issue, comment-pr, close-issue, create-discussion.
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "capabilities":
+			printCapabilities()
+			return
+		case "create-issue":
+			initAuth()
+			cmdCreateIssue()
+			return
+		case "comment-pr":
+			initAuth()
+			cmdCommentPR()
+			return
+		case "close-issue":
+			initAuth()
+			cmdCloseIssue()
+			return
+		}
+	}
+
 	flag.StringVar(&ingestURL, "sigil-ingest-url", defaultIngestURL, "Sigil ingest URL")
 	flag.DurationVar(&pollInterval, "poll-interval", 2*time.Minute, "Poll interval")
 	flag.StringVar(&watchDirs, "watch-dirs", "", "Comma-separated directories to scan for git repos")
 	flag.Parse()
 
-	token = os.Getenv("GITHUB_TOKEN")
-	if token == "" {
-		if out, err := exec.Command("gh", "auth", "token").Output(); err == nil {
-			token = strings.TrimSpace(string(out))
-		}
-	}
+	initAuth()
 	if token == "" {
 		fmt.Fprintln(os.Stderr, "sigil-plugin-github: no auth — set GITHUB_TOKEN or run 'gh auth login'")
 		os.Exit(1)
@@ -651,4 +667,178 @@ func send(event PluginEvent) {
 		return
 	}
 	resp.Body.Close()
+}
+
+func initAuth() {
+	token = os.Getenv("GITHUB_TOKEN")
+	if token == "" {
+		if out, err := exec.Command("gh", "auth", "token").Output(); err == nil {
+			token = strings.TrimSpace(string(out))
+		}
+	}
+}
+
+// --- Capabilities ---
+
+func printCapabilities() {
+	caps := map[string]any{
+		"plugin": pluginName,
+		"actions": []map[string]any{
+			{
+				"name":        "create_issue",
+				"description": "Create a GitHub issue on a repository",
+				"command":     "sigil-plugin-github create-issue --repo <repo> --title <title> --body <body>",
+			},
+			{
+				"name":        "comment_pr",
+				"description": "Add a comment to a GitHub pull request",
+				"command":     "sigil-plugin-github comment-pr --repo <repo> --pr <pr> --body <body>",
+			},
+			{
+				"name":        "close_issue",
+				"description": "Close a GitHub issue",
+				"command":     "sigil-plugin-github close-issue --repo <repo> --issue <issue>",
+			},
+		},
+		"data_sources": []string{
+			"pr_status", "pr_reviews", "pr_comments", "pr_discussion",
+			"ci_status", "linked_issue",
+		},
+	}
+	json.NewEncoder(os.Stdout).Encode(caps)
+}
+
+// --- Actions: write back to GitHub ---
+
+func cmdCreateIssue() {
+	fs := flag.NewFlagSet("create-issue", flag.ExitOnError)
+	repo := fs.String("repo", "", "owner/repo")
+	title := fs.String("title", "", "Issue title")
+	body := fs.String("body", "", "Issue body (markdown)")
+	labels := fs.String("labels", "", "Comma-separated labels")
+	fs.Parse(os.Args[2:])
+
+	if *repo == "" || *title == "" {
+		fmt.Fprintln(os.Stderr, "usage: sigil-plugin-github create-issue --repo owner/repo --title '...' [--body '...'] [--labels 'bug,priority']")
+		os.Exit(1)
+	}
+
+	payload := map[string]any{"title": *title}
+	if *body != "" {
+		payload["body"] = *body
+	}
+	if *labels != "" {
+		payload["labels"] = strings.Split(*labels, ",")
+	}
+
+	result, err := ghPost(fmt.Sprintf("%s/repos/%s/issues", githubAPI, *repo), payload)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "create-issue failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	var issue struct {
+		Number  int    `json:"number"`
+		HTMLURL string `json:"html_url"`
+	}
+	json.Unmarshal(result, &issue)
+	fmt.Printf("Created issue #%d: %s\n", issue.Number, issue.HTMLURL)
+}
+
+func cmdCommentPR() {
+	fs := flag.NewFlagSet("comment-pr", flag.ExitOnError)
+	repo := fs.String("repo", "", "owner/repo")
+	pr := fs.Int("pr", 0, "PR number")
+	body := fs.String("body", "", "Comment body (markdown)")
+	fs.Parse(os.Args[2:])
+
+	if *repo == "" || *pr == 0 || *body == "" {
+		fmt.Fprintln(os.Stderr, "usage: sigil-plugin-github comment-pr --repo owner/repo --pr 123 --body '...'")
+		os.Exit(1)
+	}
+
+	payload := map[string]any{"body": *body}
+	_, err := ghPost(fmt.Sprintf("%s/repos/%s/issues/%d/comments", githubAPI, *repo, *pr), payload)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "comment-pr failed: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Comment added to %s#%d\n", *repo, *pr)
+}
+
+func cmdCloseIssue() {
+	fs := flag.NewFlagSet("close-issue", flag.ExitOnError)
+	repo := fs.String("repo", "", "owner/repo")
+	issue := fs.Int("issue", 0, "Issue number")
+	fs.Parse(os.Args[2:])
+
+	if *repo == "" || *issue == 0 {
+		fmt.Fprintln(os.Stderr, "usage: sigil-plugin-github close-issue --repo owner/repo --issue 123")
+		os.Exit(1)
+	}
+
+	payload := map[string]any{"state": "closed"}
+	_, err := ghPatch(fmt.Sprintf("%s/repos/%s/issues/%d", githubAPI, *repo, *issue), payload)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "close-issue failed: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Closed %s#%d\n", *repo, *issue)
+}
+
+func ghPost(url string, payload map[string]any) ([]byte, error) {
+	body, _ := json.Marshal(payload)
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	result, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 300 {
+		return result, fmt.Errorf("github API %d: %s", resp.StatusCode, string(result[:min(len(result), 200)]))
+	}
+	return result, nil
+}
+
+func ghPatch(url string, payload map[string]any) ([]byte, error) {
+	body, _ := json.Marshal(payload)
+	req, err := http.NewRequest(http.MethodPatch, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	result, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 300 {
+		return result, fmt.Errorf("github API %d: %s", resp.StatusCode, string(result[:min(len(result), 200)]))
+	}
+	return result, nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

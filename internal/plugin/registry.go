@@ -70,8 +70,8 @@ var registry = []RegistryEntry{
 		Version:     "v1",
 		Category:    "scrum",
 		Language:    "go",
-		GoModule:    "github.com/alecfeeman/sigil-plugin-jira@latest",
-		BrewFormula: "alecfeeman/sigil/sigil-plugin-jira",
+		GoModule:    "", // ships with sigild
+		BrewFormula: "",
 		Binary:      "sigil-plugin-jira",
 		HasSetup:    false,
 		EnvVars: []EnvVarSpec{
@@ -100,10 +100,21 @@ var registry = []RegistryEntry{
 		Version:     "v1",
 		Category:    "ide",
 		Language:    "go",
-		GoModule:    "github.com/alecfeeman/sigil-plugin-vscode@latest",
-		BrewFormula: "alecfeeman/sigil/sigil-plugin-vscode",
+		GoModule:    "", // ships with sigild
+		BrewFormula: "",
 		Binary:      "sigil-plugin-vscode",
 		HasSetup:    true,
+	},
+	{
+		Name:        "jetbrains",
+		Description: "JetBrains IDEs — PyCharm, GoLand, IntelliJ, WebStorm, all in one",
+		Version:     "v1",
+		Category:    "ide",
+		Language:    "go",
+		GoModule:    "", // ships with sigild
+		BrewFormula: "",
+		Binary:      "sigil-plugin-jetbrains",
+		HasSetup:    false,
 	},
 
 	// ── v2: Full Team Workflow ─────────────────────────────────────────
@@ -169,16 +180,6 @@ var registry = []RegistryEntry{
 			{Name: "GITLAB_URL", Description: "GitLab instance URL", Required: true},
 			{Name: "GITLAB_TOKEN", Description: "GitLab personal access token", Required: true, Secret: true},
 		},
-	},
-	{
-		Name:        "jetbrains",
-		Description: "JetBrains IDE active file, run configs, debug",
-		Version:     "v2",
-		Category:    "ide",
-		Language:    "go",
-		GoModule:    "github.com/alecfeeman/sigil-plugin-jetbrains@latest",
-		Binary:      "sigil-plugin-jetbrains",
-		HasSetup:    true,
 	},
 	{
 		Name:        "github-actions",

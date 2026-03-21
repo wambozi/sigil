@@ -36,7 +36,7 @@ _sigild_precmd() {
         "$_sigild_cwd_json" \
         "$(date +%s)" \
         "$_SIGILD_SESSION_ID" \
-        | nc -U -w1 "$_sigild_sock" 2>/dev/null &
+        | nc -U -w1 "$_sigild_sock" >/dev/null 2>&1 &!
 }
 
 # Guard against double-registration
