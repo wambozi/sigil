@@ -3,9 +3,11 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"time"
 
 	"github.com/wambozi/sigil/internal/event"
+	"github.com/wambozi/sigil/internal/plugin"
 	"github.com/wambozi/sigil/internal/store"
 )
 
@@ -314,6 +316,80 @@ func RegisterStoreTools(reg *Registry, s StoreReader) {
 				return `{"activity_stream": null, "note": "No activity classification available yet. The ML sidecar may not be running or has not produced classifications."}`, nil
 			}
 			b, err := json.Marshal(pred)
+			if err != nil {
+				return "", err
+			}
+			return string(b), nil
+		},
+	})
+}
+
+// RegisterPluginTools adds MCP tools that expose plugin metadata, capabilities,
+// and available actions to the inference engine. Call this after the plugin
+// manager has been created and plugins have been registered.
+func RegisterPluginTools(reg *Registry, mgr *plugin.Manager, log *slog.Logger) {
+	reg.Register(Tool{
+		Name: "get_installed_plugins",
+		Description: "Returns all installed plugins with their runtime status " +
+			"(enabled, running, healthy) and capabilities (actions they can perform, " +
+			"data sources they provide). Use this to understand what integrations " +
+			"are available and what data the system can access.",
+		Parameters: map[string]any{"type": "object", "properties": map[string]any{}},
+		Fn: func(ctx context.Context, _ json.RawMessage) (string, error) {
+			statuses := mgr.Plugins()
+
+			type pluginInfo struct {
+				Name        string                `json:"name"`
+				Enabled     bool                  `json:"enabled"`
+				Running     bool                  `json:"running"`
+				Healthy     bool                  `json:"healthy"`
+				Actions     []plugin.PluginAction `json:"actions,omitempty"`
+				DataSources []string              `json:"data_sources,omitempty"`
+			}
+
+			var result []pluginInfo
+			for _, s := range statuses {
+				info := pluginInfo{
+					Name:    s.Name,
+					Enabled: s.Enabled,
+					Running: s.Running,
+					Healthy: s.Healthy,
+				}
+
+				if s.Enabled {
+					// Try to discover capabilities for running plugins.
+					caps, err := plugin.DiscoverCapabilities(s.Name)
+					if err == nil && caps != nil {
+						info.Actions = caps.Actions
+						info.DataSources = caps.DataSources
+					}
+				}
+
+				result = append(result, info)
+			}
+
+			b, err := json.Marshal(result)
+			if err != nil {
+				return "", err
+			}
+			return string(b), nil
+		},
+	})
+
+	reg.Register(Tool{
+		Name: "get_available_actions",
+		Description: "Returns all actions available across installed plugins. " +
+			"Each action has a name, description, and command template. " +
+			"Use this to understand what automated actions can be performed.",
+		Parameters: map[string]any{"type": "object", "properties": map[string]any{}},
+		Fn: func(ctx context.Context, _ json.RawMessage) (string, error) {
+			actions := mgr.AvailableActions(log)
+
+			if len(actions) == 0 {
+				return `{"actions": [], "note": "No plugin actions available. Plugins may not be installed or may not support the capabilities command."}`, nil
+			}
+
+			b, err := json.Marshal(map[string]any{"actions": actions})
 			if err != nil {
 				return "", err
 			}

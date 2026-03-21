@@ -439,10 +439,54 @@ func run(cfg daemonConfig, log *slog.Logger) error {
 	}
 	defer pluginMgr.Stop()
 
+	// Wire capabilities provider into the HTTP ingest server so sigil-ml
+	// can query GET /api/v1/capabilities to discover installed plugins.
+	pluginIngest.SetCapabilitiesProvider(func() []plugin.Capabilities {
+		var caps []plugin.Capabilities
+		for _, s := range pluginMgr.Plugins() {
+			if !s.Enabled {
+				continue
+			}
+			c, err := plugin.DiscoverCapabilities(s.Name)
+			if err != nil {
+				continue
+			}
+			caps = append(caps, *c)
+		}
+		return caps
+	})
+
 	// Plugin status socket handler (registered after manager is created).
 	srv.Handle("plugin-status", func(ctx context.Context, _ socket.Request) socket.Response {
 		return socket.Response{OK: true, Payload: socket.MarshalPayload(pluginMgr.Plugins())}
 	})
+
+	srv.Handle("plugin-capabilities", func(ctx context.Context, _ socket.Request) socket.Response {
+		type pluginCaps struct {
+			Name        string                `json:"name"`
+			Enabled     bool                  `json:"enabled"`
+			Running     bool                  `json:"running"`
+			Healthy     bool                  `json:"healthy"`
+			Actions     []plugin.PluginAction `json:"actions,omitempty"`
+			DataSources []string              `json:"data_sources,omitempty"`
+		}
+		var result []pluginCaps
+		for _, s := range pluginMgr.Plugins() {
+			pc := pluginCaps{Name: s.Name, Enabled: s.Enabled, Running: s.Running, Healthy: s.Healthy}
+			if s.Enabled {
+				caps, err := plugin.DiscoverCapabilities(s.Name)
+				if err == nil && caps != nil {
+					pc.Actions = caps.Actions
+					pc.DataSources = caps.DataSources
+				}
+			}
+			result = append(result, pc)
+		}
+		return socket.Response{OK: true, Payload: socket.MarshalPayload(result)}
+	})
+
+	// Register plugin-aware MCP tools now that the manager exists.
+	mcp.RegisterPluginTools(mcpRegistry, pluginMgr, log)
 
 	// --- Task transition → LLM suggestion → plugin action ------------------
 	taskTracker.OnTransition = func(oldPhase, newPhase task.Phase, t *task.Task) {
