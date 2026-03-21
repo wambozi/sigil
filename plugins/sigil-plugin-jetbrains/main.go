@@ -74,7 +74,35 @@ var (
 	lastState    = make(map[string]*ideState) // key: "product/version"
 )
 
+// CLI binary names for each product (installed by JetBrains Toolbox or manually).
+var cliBinaries = map[string]string{
+	"PyCharm":      "pycharm",
+	"GoLand":       "goland",
+	"IntelliJIdea": "idea",
+	"WebStorm":     "webstorm",
+	"DataGrip":     "datagrip",
+	"DataSpell":    "dataspell",
+	"RustRover":    "rustrover",
+	"CLion":        "clion",
+	"PhpStorm":     "phpstorm",
+	"Rider":        "rider",
+}
+
 func main() {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "capabilities":
+			printCapabilities()
+			return
+		case "open-file":
+			cmdOpenFile()
+			return
+		case "focus":
+			cmdFocus()
+			return
+		}
+	}
+
 	flag.StringVar(&ingestURL, "sigil-ingest-url", defaultIngestURL, "Sigil ingest URL")
 	flag.DurationVar(&pollInterval, "poll-interval", 30*time.Second, "Poll interval")
 	flag.Parse()
@@ -429,4 +457,164 @@ func send(event PluginEvent) {
 		return
 	}
 	resp.Body.Close()
+}
+
+// --- Capabilities ---
+
+func printCapabilities() {
+	caps := map[string]any{
+		"plugin": pluginName,
+		"actions": []map[string]any{
+			{
+				"name":        "open_file",
+				"description": "Open a file in the appropriate JetBrains IDE at a specific line",
+				"command":     "sigil-plugin-jetbrains open-file --file <file> [--line <line>] [--ide <ide>]",
+			},
+			{
+				"name":        "focus",
+				"description": "Bring a JetBrains IDE to the foreground",
+				"command":     "sigil-plugin-jetbrains focus [--ide <ide>]",
+			},
+		},
+		"data_sources": []string{
+			"ide_status", "project_switch",
+		},
+	}
+	json.NewEncoder(os.Stdout).Encode(caps)
+}
+
+// --- Actions ---
+
+// cmdOpenFile opens a file in the appropriate JetBrains IDE.
+// It auto-detects which IDE to use based on the file's project,
+// or accepts an explicit --ide flag.
+func cmdOpenFile() {
+	fs := flag.NewFlagSet("open-file", flag.ExitOnError)
+	file := fs.String("file", "", "File path to open")
+	line := fs.Int("line", 0, "Line number to navigate to")
+	column := fs.Int("column", 1, "Column number")
+	ide := fs.String("ide", "", "IDE to use (e.g. GoLand, PyCharm). Auto-detected if not set.")
+	fs.Parse(os.Args[2:])
+
+	if *file == "" {
+		fmt.Fprintln(os.Stderr, "usage: sigil-plugin-jetbrains open-file --file <path> [--line N] [--ide GoLand]")
+		os.Exit(1)
+	}
+
+	// Auto-detect the IDE from the file path if not specified.
+	targetIDE := *ide
+	if targetIDE == "" {
+		targetIDE = detectIDEForFile(*file)
+	}
+	if targetIDE == "" {
+		// Fall back to any running IDE.
+		running := detectRunning()
+		for product := range running {
+			targetIDE = product
+			break
+		}
+	}
+	if targetIDE == "" {
+		fmt.Fprintln(os.Stderr, "sigil-plugin-jetbrains: no IDE detected — specify --ide")
+		os.Exit(1)
+	}
+
+	bin := findIDEBinary(targetIDE)
+	if bin == "" {
+		fmt.Fprintf(os.Stderr, "sigil-plugin-jetbrains: CLI binary for %s not found in PATH\n", targetIDE)
+		os.Exit(1)
+	}
+
+	// Build args: <binary> --line N --column C <file>
+	args := []string{}
+	if *line > 0 {
+		args = append(args, "--line", fmt.Sprintf("%d", *line))
+	}
+	if *column > 0 {
+		args = append(args, "--column", fmt.Sprintf("%d", *column))
+	}
+	args = append(args, *file)
+
+	fmt.Fprintf(os.Stderr, "sigil-plugin-jetbrains: opening %s in %s (line %d)\n", filepath.Base(*file), targetIDE, *line)
+
+	cmd := exec.Command(bin, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "sigil-plugin-jetbrains: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+// cmdFocus brings a JetBrains IDE to the foreground.
+func cmdFocus() {
+	fs := flag.NewFlagSet("focus", flag.ExitOnError)
+	ide := fs.String("ide", "", "IDE to focus (e.g. GoLand, PyCharm). Focuses most recent if not set.")
+	fs.Parse(os.Args[2:])
+
+	targetIDE := *ide
+	if targetIDE == "" {
+		// Focus the most recently active IDE.
+		running := detectRunning()
+		for product := range running {
+			targetIDE = product
+			break
+		}
+	}
+
+	if targetIDE == "" {
+		fmt.Fprintln(os.Stderr, "sigil-plugin-jetbrains: no running IDE found")
+		os.Exit(1)
+	}
+
+	displayName := products[targetIDE]
+	if displayName == "" {
+		displayName = targetIDE
+	}
+
+	if runtime.GOOS == "darwin" {
+		// Use osascript to activate the app.
+		script := fmt.Sprintf(`tell application "%s" to activate`, displayName)
+		exec.Command("osascript", "-e", script).Run()
+		fmt.Fprintf(os.Stderr, "sigil-plugin-jetbrains: focused %s\n", displayName)
+	} else {
+		// On Linux, use wmctrl or xdotool if available.
+		if wmctrl, err := exec.LookPath("wmctrl"); err == nil {
+			exec.Command(wmctrl, "-a", displayName).Run()
+		}
+	}
+}
+
+// detectIDEForFile determines which IDE should open a file based on which
+// IDE has the file's project directory as a recent project.
+func detectIDEForFile(filePath string) string {
+	absPath, _ := filepath.Abs(filePath)
+
+	ides := discoverIDEs()
+	for _, ide := range ides {
+		projects := readRecentProjects(ide.configDir)
+		for _, proj := range projects {
+			projPath := expandHome(proj.path)
+			if strings.HasPrefix(absPath, projPath) {
+				return ide.product
+			}
+		}
+	}
+	return ""
+}
+
+// findIDEBinary finds the CLI binary for a given IDE product.
+func findIDEBinary(product string) string {
+	// Check known binary name.
+	if bin, ok := cliBinaries[product]; ok {
+		if path, err := exec.LookPath(bin); err == nil {
+			return path
+		}
+	}
+	// Try lowercase product name.
+	lower := strings.ToLower(product)
+	if path, err := exec.LookPath(lower); err == nil {
+		return path
+	}
+	return ""
 }
