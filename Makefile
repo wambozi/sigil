@@ -8,7 +8,7 @@ CMDS    := ./cmd/sigild/ ./cmd/sigilctl/
 PLUGINS := $(wildcard ./plugins/sigil-plugin-*/)
 
 .PHONY: all fmt fmt-check vet lint staticcheck test test-race check build install run \
-        status generate coverage clean sync-assets help
+        status generate coverage clean sync-assets hooks help
 
 ## all: default target — build everything.
 all: build
@@ -82,6 +82,12 @@ install: sync-assets
 check: fmt-check vet lint test-race
 
 ## ---------- Dev helpers ---------------------------------------------------
+
+## hooks: install git pre-commit hook (auto-formats Go on commit).
+hooks:
+	@cp scripts/pre-commit .git/hooks/pre-commit
+	@chmod +x .git/hooks/pre-commit
+	@echo "pre-commit hook installed"
 
 ## generate: re-generate mocks via mockery.
 generate:

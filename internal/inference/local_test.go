@@ -116,10 +116,6 @@ func TestNewLocal_startServer_defaultCtxSize(t *testing.T) {
 
 func TestNewLocal_startServer_success(t *testing.T) {
 	helperBin := "testdata/fake_llama_server"
-	if _, err := os.Stat(helperBin); err != nil {
-		t.Skipf("testdata/fake_llama_server not found; build it with: "+
-			"cd testdata && go build -o fake_llama_server fake_llama_server.go: %v", err)
-	}
 
 	const port = "18921"
 	serverURL := "http://127.0.0.1:" + port
@@ -560,10 +556,6 @@ func TestKillProcess_sigkillPath(t *testing.T) {
 
 	// Use a helper binary that ignores SIGTERM to exercise the SIGKILL path.
 	helperBin := "testdata/sigterm_ignore"
-	if _, err := os.Stat(helperBin); err != nil {
-		t.Skipf("testdata/sigterm_ignore binary not found (%v); build it with: "+
-			"cd testdata && go build -o sigterm_ignore sigterm_ignore.go", err)
-	}
 
 	// Do NOT start a goroutine reaping the process in this test — killProcess
 	// must be the sole reaper, otherwise proc.Wait() inside killProcess returns

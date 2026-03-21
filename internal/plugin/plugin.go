@@ -101,7 +101,13 @@ func (m *Manager) Start(ctx context.Context) error {
 			m.log.Warn("plugin: failed to start", "plugin", name, "err", err)
 			continue
 		}
-		m.log.Info("plugin: started", "plugin", name, "pid", inst.proc.Pid)
+		inst.mu.Lock()
+		pid := 0
+		if inst.proc != nil {
+			pid = inst.proc.Pid
+		}
+		inst.mu.Unlock()
+		m.log.Info("plugin: started", "plugin", name, "pid", pid)
 	}
 
 	// Start health monitor.
