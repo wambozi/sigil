@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
@@ -40,20 +43,22 @@ jobs:
         run: |
           VERSION="${{ github.ref_name }}"
           LDFLAGS="-X main.version=${VERSION}"
-          go build -ldflags "${LDFLAGS}" -o "sigild-${{ matrix.goos }}-${{ matrix.goarch }}" ./cmd/sigild/
-          go build -ldflags "${LDFLAGS}" -o "sigilctl-${{ matrix.goos }}-${{ matrix.goarch }}" ./cmd/sigilctl/
+          SUFFIX="${{ matrix.goos }}-${{ matrix.goarch }}"
+          go build -ldflags "${LDFLAGS}" -o "sigild-${SUFFIX}" ./cmd/sigild/
+          go build -ldflags "${LDFLAGS}" -o "sigilctl-${SUFFIX}" ./cmd/sigilctl/
+          for p in ./plugins/sigil-plugin-*/; do
+            name=$(basename "$p")
+            go build -ldflags "${LDFLAGS}" -o "${name}-${SUFFIX}" "$p"
+          done
 
       - name: Generate checksums
         run: |
-          sha256sum \
-            "sigild-${{ matrix.goos }}-${{ matrix.goarch }}" \
-            "sigilctl-${{ matrix.goos }}-${{ matrix.goarch }}" \
-            > "checksums-${{ matrix.goos }}-${{ matrix.goarch }}.txt"
+          SUFFIX="${{ matrix.goos }}-${{ matrix.goarch }}"
+          sha256sum *-${SUFFIX} > "checksums-${SUFFIX}.txt"
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            sigild-${{ matrix.goos }}-${{ matrix.goarch }}
-            sigilctl-${{ matrix.goos }}-${{ matrix.goarch }}
+            *-${{ matrix.goos }}-${{ matrix.goarch }}
             checksums-${{ matrix.goos }}-${{ matrix.goarch }}.txt
