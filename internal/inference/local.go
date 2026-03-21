@@ -53,7 +53,7 @@ func NewLocal(cfg LocalConfig, log *slog.Logger) (*LocalBackend, error) {
 	l := &LocalBackend{
 		baseURL: url,
 		client: &http.Client{
-			Timeout: 120 * time.Second,
+			Timeout: 5 * time.Minute, // local LLM on CPU with tools can be slow
 		},
 		log:       log,
 		cfg:       cfg,
@@ -271,6 +271,14 @@ func (l *LocalBackend) killProcess() {
 	}
 }
 
+// modelName returns the model identifier for API requests.
+func (l *LocalBackend) modelName() string {
+	if l.cfg.ModelName != "" {
+		return l.cfg.ModelName
+	}
+	return "local"
+}
+
 // Complete sends a chat completion request to the local server.
 func (l *LocalBackend) Complete(ctx context.Context, system, user string) (*CompletionResult, error) {
 	msgs := make([]chatMessage, 0, 2)
@@ -280,7 +288,7 @@ func (l *LocalBackend) Complete(ctx context.Context, system, user string) (*Comp
 	msgs = append(msgs, chatMessage{Role: "user", Content: user})
 
 	body, err := json.Marshal(chatRequest{
-		Model:    "local",
+		Model:    l.modelName(),
 		Messages: msgs,
 	})
 	if err != nil {
@@ -322,22 +330,78 @@ func (l *LocalBackend) Complete(ctx context.Context, system, user string) (*Comp
 	}, nil
 }
 
-// Ping checks whether the local server is healthy.
-func (l *LocalBackend) Ping(ctx context.Context) error {
-	url := l.baseURL + "/health"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return err
+// CompleteWithTools sends a tool-calling chat completion request to the local server.
+func (l *LocalBackend) CompleteWithTools(ctx context.Context, messages []ChatMessage, tools []ChatToolDef) (*ToolCompletionResult, error) {
+	type toolRequest struct {
+		Model    string        `json:"model"`
+		Messages []ChatMessage `json:"messages"`
+		Tools    []ChatToolDef `json:"tools,omitempty"`
 	}
+
+	body, err := json.Marshal(toolRequest{
+		Model:    l.modelName(),
+		Messages: messages,
+		Tools:    tools,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("inference/local: marshal: %w", err)
+	}
+
+	url := l.baseURL + "/v1/chat/completions"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("inference/local: build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	start := time.Now()
 	resp, err := l.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("inference/local: ping: %w", err)
+		return nil, fmt.Errorf("inference/local: request: %w", err)
 	}
-	resp.Body.Close()
+	defer resp.Body.Close()
+	elapsed := time.Since(start).Milliseconds()
+
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("inference/local: ping returned HTTP %d", resp.StatusCode)
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return nil, fmt.Errorf("inference/local: HTTP %d: %s", resp.StatusCode, raw)
 	}
-	return nil
+
+	var cr chatResponseWithTools
+	if err := json.NewDecoder(resp.Body).Decode(&cr); err != nil {
+		return nil, fmt.Errorf("inference/local: decode: %w", err)
+	}
+	if len(cr.Choices) == 0 {
+		return nil, fmt.Errorf("inference/local: empty choices")
+	}
+
+	return &ToolCompletionResult{
+		Content:   cr.Choices[0].Message.Content,
+		ToolCalls: cr.Choices[0].Message.ToolCalls,
+		Routing:   "local",
+		LatencyMS: elapsed,
+	}, nil
+}
+
+// Ping checks whether the local server is healthy.
+// Tries /health (llama-server) first, falls back to / (Ollama).
+func (l *LocalBackend) Ping(ctx context.Context) error {
+	for _, path := range []string{"/health", "/"} {
+		url := l.baseURL + path
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return err
+		}
+		resp, err := l.client.Do(req)
+		if err != nil {
+			return fmt.Errorf("inference/local: ping: %w", err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			return nil
+		}
+	}
+	return fmt.Errorf("inference/local: ping failed on all health endpoints")
 }
 
 // Stop shuts down the local backend. If we started llama-server, kills it.

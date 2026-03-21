@@ -71,3 +71,17 @@ CREATE TABLE IF NOT EXISTS ml_events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_ml_events_ts ON ml_events(ts);
+
+-- ML predictions.  Stores model outputs with optional expiry for
+-- time-sensitive predictions (e.g. quality scores, task estimates).
+CREATE TABLE IF NOT EXISTS ml_predictions (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    model      TEXT NOT NULL,              -- model name, e.g. "quality", "task_estimate"
+    result     TEXT NOT NULL,              -- JSON blob of prediction output
+    confidence REAL NOT NULL,              -- 0.0–1.0
+    created_at INTEGER NOT NULL,           -- Unix milliseconds
+    expires_at INTEGER                     -- Unix milliseconds, NULL = never expires
+);
+
+CREATE INDEX IF NOT EXISTS idx_ml_predictions_model ON ml_predictions(model);
+CREATE INDEX IF NOT EXISTS idx_ml_predictions_created ON ml_predictions(created_at);

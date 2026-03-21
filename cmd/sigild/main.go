@@ -40,9 +40,13 @@ import (
 	"github.com/wambozi/sigil/internal/event"
 	"github.com/wambozi/sigil/internal/fleet"
 	"github.com/wambozi/sigil/internal/inference"
+	"github.com/wambozi/sigil/internal/mcp"
 	"github.com/wambozi/sigil/internal/ml"
+	"net/http"
+
 	"github.com/wambozi/sigil/internal/network"
 	"github.com/wambozi/sigil/internal/notifier"
+	"github.com/wambozi/sigil/internal/plugin"
 	"github.com/wambozi/sigil/internal/socket"
 	"github.com/wambozi/sigil/internal/store"
 	"github.com/wambozi/sigil/internal/task"
@@ -175,6 +179,7 @@ func run(cfg daemonConfig, log *slog.Logger) error {
 			ServerURL: cfg.fileCfg.Inference.Local.ServerURL,
 			ServerBin: cfg.fileCfg.Inference.Local.ServerBin,
 			ModelPath: cfg.fileCfg.Inference.Local.ModelPath,
+			ModelName: cfg.fileCfg.Inference.Local.ModelName,
 			CtxSize:   cfg.fileCfg.Inference.Local.CtxSize,
 			GPULayers: cfg.fileCfg.Inference.Local.GPULayers,
 		},
@@ -257,6 +262,7 @@ func run(cfg daemonConfig, log *slog.Logger) error {
 
 	// Wire ML into the task tracker for predictions and retraining.
 	if mlEngine.Enabled() {
+		mlEngine.SetStore(db)
 		taskTracker.SetMLEngine(&mlEngineAdapter{mlEngine}, cfg.dbPath, cfg.fileCfg.ML.RetrainEvery)
 	}
 
@@ -302,6 +308,33 @@ func run(cfg daemonConfig, log *slog.Logger) error {
 	registerHandlers(srv, db, engine, ntf, anlz, terminalSrc, log, &currentRSSMB, nextDigest, &currentProfile, cfg)
 	registerTaskHandlers(srv, taskTracker, db)
 	registerMLHandlers(srv, mlEngine, cfg.dbPath)
+
+	// --- MCP Tool Registry + Ask Handler ------------------------------------
+	mcpRegistry := mcp.NewRegistry()
+	mcp.RegisterStoreTools(mcpRegistry, db)
+
+	srv.Handle("ask", func(ctx context.Context, req socket.Request) socket.Response {
+		var p struct {
+			Query string `json:"query"`
+		}
+		if err := json.Unmarshal(req.Payload, &p); err != nil {
+			return socket.Response{Error: "invalid payload: " + err.Error()}
+		}
+		if p.Query == "" {
+			return socket.Response{Error: "query is required"}
+		}
+
+		result, err := mcpRegistry.RunToolLoop(ctx, &mcpEngineAdapter{engine}, p.Query)
+		if err != nil {
+			return socket.Response{Error: err.Error()}
+		}
+
+		return socket.Response{OK: true, Payload: socket.MarshalPayload(map[string]any{
+			"answer":          result.Answer,
+			"tool_calls_made": result.ToolCallsMade,
+			"latency_ms":      result.TotalLatencyMS,
+		})}
+	})
 
 	// Wire suggestion push via the notifier's OnSuggestion callback.
 	// Every suggestion that passes the confidence gate is fanned out to any
@@ -368,6 +401,48 @@ func run(cfg daemonConfig, log *slog.Logger) error {
 		return fmt.Errorf("start socket: %w", err)
 	}
 	log.Info("socket listening", "path", cfg.socketPath)
+
+	// --- Plugin ingest HTTP server ------------------------------------------
+	pluginIngest := plugin.NewIngestServer(func(pe plugin.Event) {
+		corr, _ := json.Marshal(pe.Correlation)
+		payload, _ := json.Marshal(pe.Payload)
+		if err := db.InsertPluginEvent(ctx, pe.Plugin, pe.Kind, string(corr), string(payload)); err != nil {
+			log.Error("plugin ingest: store event", "plugin", pe.Plugin, "err", err)
+		}
+	}, log)
+	pluginHTTP := &http.Server{
+		Addr:    "127.0.0.1:7775",
+		Handler: pluginIngest.Handler(),
+	}
+	go func() {
+		if err := pluginHTTP.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Error("plugin ingest server", "err", err)
+		}
+	}()
+	log.Info("plugin ingest listening", "addr", "127.0.0.1:7775")
+
+	// --- Plugin Manager -----------------------------------------------------
+	pluginMgr := plugin.NewManager("http://127.0.0.1:7775/api/v1/ingest", log)
+	for name, pcfg := range cfg.fileCfg.Plugins {
+		pluginMgr.Register(plugin.Config{
+			Name:         name,
+			Enabled:      pcfg.Enabled,
+			Binary:       pcfg.Binary,
+			Daemon:       pcfg.Daemon,
+			PollInterval: pcfg.PollInterval,
+			HealthURL:    pcfg.HealthURL,
+			Env:          pcfg.Env,
+		})
+	}
+	if err := pluginMgr.Start(ctx); err != nil {
+		log.Warn("plugin manager: start failed", "err", err)
+	}
+	defer pluginMgr.Stop()
+
+	// Plugin status socket handler (registered after manager is created).
+	srv.Handle("plugin-status", func(ctx context.Context, _ socket.Request) socket.Response {
+		return socket.Response{OK: true, Payload: socket.MarshalPayload(pluginMgr.Plugins())}
+	})
 
 	// --- Credential store (always initialised; handlers registered below) ---
 	credStore := network.NewCredentialStore()
@@ -1115,6 +1190,50 @@ func registerMLHandlers(srv *socket.Server, engine *ml.Engine, dbPath string) {
 		}
 		return socket.Response{OK: true, Payload: socket.MarshalPayload(pred)}
 	})
+}
+
+// --- MCP engine adapter ----------------------------------------------------
+
+// mcpEngineAdapter wraps inference.Engine to satisfy mcp.ToolEngine.
+type mcpEngineAdapter struct {
+	engine *inference.Engine
+}
+
+func (a *mcpEngineAdapter) CompleteWithTools(ctx context.Context, messages []mcp.Message, tools []mcp.ToolDef) (*mcp.ToolEngineResult, error) {
+	chatMsgs := make([]inference.ChatMessage, len(messages))
+	for i, m := range messages {
+		chatMsgs[i] = inference.ChatMessage{
+			Role: m.Role, Content: m.Content,
+			ToolCallID: m.ToolCallID, Name: m.Name,
+		}
+		for _, tc := range m.ToolCalls {
+			chatMsgs[i].ToolCalls = append(chatMsgs[i].ToolCalls, inference.ChatToolCall{
+				ID: tc.ID, Type: tc.Type,
+				Function: inference.ChatToolCallFunc{Name: tc.Function.Name, Arguments: tc.Function.Arguments},
+			})
+		}
+	}
+	chatTools := make([]inference.ChatToolDef, len(tools))
+	for i, t := range tools {
+		chatTools[i] = inference.ChatToolDef{
+			Type: t.Type,
+			Function: inference.ChatToolDefFunc{
+				Name: t.Function.Name, Description: t.Function.Description, Parameters: t.Function.Parameters,
+			},
+		}
+	}
+	result, err := a.engine.CompleteWithTools(ctx, chatMsgs, chatTools)
+	if err != nil {
+		return nil, err
+	}
+	out := &mcp.ToolEngineResult{Content: result.Content, Routing: result.Routing, LatencyMS: result.LatencyMS}
+	for _, tc := range result.ToolCalls {
+		out.ToolCalls = append(out.ToolCalls, mcp.ToolCall{
+			ID: tc.ID, Type: tc.Type,
+			Function: mcp.ToolCallFunc{Name: tc.Function.Name, Arguments: tc.Function.Arguments},
+		})
+	}
+	return out, nil
 }
 
 // --- ML adapter for task tracker -------------------------------------------

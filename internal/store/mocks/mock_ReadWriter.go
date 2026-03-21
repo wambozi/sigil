@@ -744,6 +744,114 @@ func (_m *MockReadWriter) UpdateTask(ctx context.Context, t store.TaskRecord) er
 	return r0
 }
 
+// QueryLatestPrediction provides a mock function with given fields: ctx, model
+func (_m *MockReadWriter) QueryLatestPrediction(ctx context.Context, model string) (*store.PredictionRecord, error) {
+	ret := _m.Called(ctx, model)
+
+	if len(ret) == 0 {
+		panic("no return value specified for QueryLatestPrediction")
+	}
+
+	var r0 *store.PredictionRecord
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, string) (*store.PredictionRecord, error)); ok {
+		return rf(ctx, model)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, string) *store.PredictionRecord); ok {
+		r0 = rf(ctx, model)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*store.PredictionRecord)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = rf(ctx, model)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// QueryPredictions provides a mock function with given fields: ctx, model, since
+func (_m *MockReadWriter) QueryPredictions(ctx context.Context, model string, since time.Time) ([]store.PredictionRecord, error) {
+	ret := _m.Called(ctx, model, since)
+
+	if len(ret) == 0 {
+		panic("no return value specified for QueryPredictions")
+	}
+
+	var r0 []store.PredictionRecord
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, string, time.Time) ([]store.PredictionRecord, error)); ok {
+		return rf(ctx, model, since)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, string, time.Time) []store.PredictionRecord); ok {
+		r0 = rf(ctx, model, since)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]store.PredictionRecord)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, string, time.Time) error); ok {
+		r1 = rf(ctx, model, since)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// QueryPluginEvents provides a mock function with given fields: ctx, pluginName, since, limit
+func (_m *MockReadWriter) QueryPluginEvents(ctx context.Context, pluginName string, since time.Time, limit int) ([]store.PluginEventRecord, error) {
+	ret := _m.Called(ctx, pluginName, since, limit)
+
+	if len(ret) == 0 {
+		panic("no return value specified for QueryPluginEvents")
+	}
+
+	var r0 []store.PluginEventRecord
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, string, time.Time, int) ([]store.PluginEventRecord, error)); ok {
+		return rf(ctx, pluginName, since, limit)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, string, time.Time, int) []store.PluginEventRecord); ok {
+		r0 = rf(ctx, pluginName, since, limit)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]store.PluginEventRecord)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, string, time.Time, int) error); ok {
+		r1 = rf(ctx, pluginName, since, limit)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// InsertPrediction provides a mock function with given fields: ctx, model, result, confidence, expiresAt
+func (_m *MockReadWriter) InsertPrediction(ctx context.Context, model string, result string, confidence float64, expiresAt *time.Time) error {
+	ret := _m.Called(ctx, model, result, confidence, expiresAt)
+
+	if len(ret) == 0 {
+		panic("no return value specified for InsertPrediction")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, float64, *time.Time) error); ok {
+		r0 = rf(ctx, model, result, confidence, expiresAt)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
 // NewMockReadWriter creates a new instance of MockReadWriter. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
 // The first argument is typically a *testing.T value.
 func NewMockReadWriter(t interface {

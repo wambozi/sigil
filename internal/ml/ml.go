@@ -5,8 +5,10 @@ package ml
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"time"
 )
 
 // RoutingMode controls how the engine routes ML requests.
@@ -47,12 +49,23 @@ type Stoppable interface {
 	Stop() error
 }
 
+// PredictionStore is the optional interface for persisting predictions.
+type PredictionStore interface {
+	InsertPrediction(ctx context.Context, model, result string, confidence float64, expiresAt *time.Time) error
+}
+
 // Engine manages local and cloud ML backends with routing and fallback.
 type Engine struct {
 	local Backend
 	cloud Backend
 	mode  RoutingMode
 	log   *slog.Logger
+	store PredictionStore // optional — set via SetStore
+}
+
+// SetStore configures the prediction store for persisting results.
+func (e *Engine) SetStore(s PredictionStore) {
+	e.store = s
 }
 
 // New creates an Engine from the given configuration.
@@ -88,28 +101,46 @@ func New(cfg Config, log *slog.Logger) (*Engine, error) {
 }
 
 // Predict sends a prediction request to the appropriate backend.
+// If a PredictionStore is configured, the result is persisted.
 func (e *Engine) Predict(ctx context.Context, endpoint string, features map[string]any) (*Prediction, error) {
 	if e.mode == RouteDisabled {
 		return nil, fmt.Errorf("ml: disabled")
 	}
+	var pred *Prediction
+	var err error
+
 	switch e.mode {
 	case RouteLocal:
-		return e.predictLocal(ctx, endpoint, features)
+		pred, err = e.predictLocal(ctx, endpoint, features)
 	case RouteRemote:
-		return e.predictCloud(ctx, endpoint, features)
+		pred, err = e.predictCloud(ctx, endpoint, features)
 	case RouteRemoteFirst:
-		result, err := e.predictCloud(ctx, endpoint, features)
+		pred, err = e.predictCloud(ctx, endpoint, features)
 		if err != nil && e.local != nil {
-			return e.predictLocal(ctx, endpoint, features)
+			pred, err = e.predictLocal(ctx, endpoint, features)
 		}
-		return result, err
 	default: // localfirst
-		result, err := e.predictLocal(ctx, endpoint, features)
+		pred, err = e.predictLocal(ctx, endpoint, features)
 		if err != nil && e.cloud != nil {
-			return e.predictCloud(ctx, endpoint, features)
+			pred, err = e.predictCloud(ctx, endpoint, features)
 		}
-		return result, err
 	}
+
+	// Persist prediction to store if available.
+	if err == nil && pred != nil && e.store != nil {
+		resultJSON, _ := json.Marshal(pred.Result)
+		confidence := 0.0
+		if c, ok := pred.Result["confidence"].(float64); ok {
+			confidence = c
+		} else if c, ok := pred.Result["probability"].(float64); ok {
+			confidence = c
+		}
+		if storeErr := e.store.InsertPrediction(ctx, endpoint, string(resultJSON), confidence, nil); storeErr != nil {
+			e.log.Warn("ml: failed to persist prediction", "endpoint", endpoint, "err", storeErr)
+		}
+	}
+
+	return pred, err
 }
 
 // Train triggers model retraining on the appropriate backend.

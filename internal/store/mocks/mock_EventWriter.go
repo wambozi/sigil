@@ -226,6 +226,24 @@ func (_m *MockEventWriter) UpdateTask(ctx context.Context, t store.TaskRecord) e
 	return r0
 }
 
+// InsertPrediction provides a mock function with given fields: ctx, model, result, confidence, expiresAt
+func (_m *MockEventWriter) InsertPrediction(ctx context.Context, model string, result string, confidence float64, expiresAt *time.Time) error {
+	ret := _m.Called(ctx, model, result, confidence, expiresAt)
+
+	if len(ret) == 0 {
+		panic("no return value specified for InsertPrediction")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, float64, *time.Time) error); ok {
+		r0 = rf(ctx, model, result, confidence, expiresAt)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
 // NewMockEventWriter creates a new instance of MockEventWriter. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
 // The first argument is typically a *testing.T value.
 func NewMockEventWriter(t interface {

@@ -7,12 +7,13 @@ type Config struct {
 	Cloud CloudConfig `toml:"cloud"`
 }
 
-// LocalConfig configures the local inference backend (e.g. llama-server).
+// LocalConfig configures the local inference backend (e.g. llama-server, Ollama).
 type LocalConfig struct {
 	Enabled   bool   `toml:"enabled"`
 	ServerURL string `toml:"server_url"` // default "http://127.0.0.1:8081"
 	ServerBin string `toml:"server_bin"` // path to llama-server, empty = don't manage
 	ModelPath string `toml:"model_path"` // path to .gguf file
+	ModelName string `toml:"model_name"` // model name for Ollama (e.g. "qwen2.5:1.5b")
 	CtxSize   int    `toml:"ctx_size"`   // context window, default 4096
 	GPULayers int    `toml:"gpu_layers"` // -1 = auto, 0 = CPU only
 }

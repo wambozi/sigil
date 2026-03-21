@@ -29,16 +29,66 @@ type CompletionResult struct {
 	LatencyMS int64  `json:"latency_ms"`
 }
 
+// ChatMessage is the multi-turn message format for tool-calling completions.
+type ChatMessage struct {
+	Role       string         `json:"role"`
+	Content    string         `json:"content"`
+	ToolCalls  []ChatToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string         `json:"tool_call_id,omitempty"`
+	Name       string         `json:"name,omitempty"`
+}
+
+// ChatToolCall represents a tool call issued by the model.
+type ChatToolCall struct {
+	ID       string           `json:"id"`
+	Type     string           `json:"type"`
+	Function ChatToolCallFunc `json:"function"`
+}
+
+// ChatToolCallFunc holds the function name and JSON-encoded arguments.
+type ChatToolCallFunc struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+// ChatToolDef describes a tool the model may call.
+type ChatToolDef struct {
+	Type     string          `json:"type"`
+	Function ChatToolDefFunc `json:"function"`
+}
+
+// ChatToolDefFunc holds the tool function schema.
+type ChatToolDefFunc struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Parameters  map[string]any `json:"parameters"`
+}
+
+// ToolCompletionResult extends CompletionResult with tool call support.
+type ToolCompletionResult struct {
+	Content   string         `json:"content"`
+	ToolCalls []ChatToolCall `json:"tool_calls,omitempty"`
+	Routing   string         `json:"routing"`
+	LatencyMS int64          `json:"latency_ms"`
+}
+
 // Backend is implemented by each inference backend (local, cloud).
 type Backend interface {
 	Complete(ctx context.Context, system, user string) (*CompletionResult, error)
 	Ping(ctx context.Context) error
 }
 
-// Compile-time assertions: both backends satisfy Backend.
+// ToolBackend is implemented by backends that support tool-calling completions.
+type ToolBackend interface {
+	CompleteWithTools(ctx context.Context, messages []ChatMessage, tools []ChatToolDef) (*ToolCompletionResult, error)
+}
+
+// Compile-time assertions: both backends satisfy Backend and ToolBackend.
 var (
-	_ Backend = (*LocalBackend)(nil)
-	_ Backend = (*CloudBackend)(nil)
+	_ Backend     = (*LocalBackend)(nil)
+	_ Backend     = (*CloudBackend)(nil)
+	_ ToolBackend = (*LocalBackend)(nil)
+	_ ToolBackend = (*CloudBackend)(nil)
 )
 
 // Engine manages local and cloud inference backends and routes requests
@@ -107,6 +157,54 @@ func (e *Engine) Complete(ctx context.Context, system, user string) (*Completion
 		}
 		return result, err
 	}
+}
+
+// CompleteWithTools sends a multi-turn tool-calling request and returns the
+// assistant reply, which may include tool calls. Routing and fallback
+// behaviour match Complete().
+func (e *Engine) CompleteWithTools(ctx context.Context, messages []ChatMessage, tools []ChatToolDef) (*ToolCompletionResult, error) {
+	switch e.mode {
+	case RouteLocal:
+		return e.completeWithToolsLocal(ctx, messages, tools)
+	case RouteRemote:
+		return e.completeWithToolsCloud(ctx, messages, tools)
+	case RouteRemoteFirst:
+		result, err := e.completeWithToolsCloud(ctx, messages, tools)
+		if err != nil && e.local != nil {
+			e.log.Warn("inference: cloud failed, falling back to local", "err", err)
+			return e.completeWithToolsLocal(ctx, messages, tools)
+		}
+		return result, err
+	default: // localfirst
+		result, err := e.completeWithToolsLocal(ctx, messages, tools)
+		if err != nil && e.cloud != nil {
+			e.log.Warn("inference: local failed, falling back to cloud", "err", err)
+			return e.completeWithToolsCloud(ctx, messages, tools)
+		}
+		return result, err
+	}
+}
+
+func (e *Engine) completeWithToolsLocal(ctx context.Context, messages []ChatMessage, tools []ChatToolDef) (*ToolCompletionResult, error) {
+	if e.local == nil {
+		return nil, fmt.Errorf("inference: local backend not configured")
+	}
+	tb, ok := e.local.(ToolBackend)
+	if !ok {
+		return nil, fmt.Errorf("inference: local backend does not support tool calling")
+	}
+	return tb.CompleteWithTools(ctx, messages, tools)
+}
+
+func (e *Engine) completeWithToolsCloud(ctx context.Context, messages []ChatMessage, tools []ChatToolDef) (*ToolCompletionResult, error) {
+	if e.cloud == nil {
+		return nil, fmt.Errorf("inference: cloud backend not configured")
+	}
+	tb, ok := e.cloud.(ToolBackend)
+	if !ok {
+		return nil, fmt.Errorf("inference: cloud backend does not support tool calling")
+	}
+	return tb.CompleteWithTools(ctx, messages, tools)
 }
 
 func (e *Engine) completeLocal(ctx context.Context, system, user string) (*CompletionResult, error) {

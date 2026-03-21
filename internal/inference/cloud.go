@@ -190,6 +190,67 @@ func (c *CloudBackend) completeAnthropic(ctx context.Context, system, user strin
 	}, nil
 }
 
+// CompleteWithTools sends a tool-calling chat completion request to the cloud provider.
+// Tool calling is only supported on OpenAI-compatible providers for now.
+func (c *CloudBackend) CompleteWithTools(ctx context.Context, messages []ChatMessage, tools []ChatToolDef) (*ToolCompletionResult, error) {
+	if c.format == "anthropic" {
+		return nil, fmt.Errorf("inference/cloud: tool calling not supported on Anthropic provider yet")
+	}
+
+	type toolRequest struct {
+		Model    string        `json:"model"`
+		Messages []ChatMessage `json:"messages"`
+		Tools    []ChatToolDef `json:"tools,omitempty"`
+	}
+
+	body, err := json.Marshal(toolRequest{
+		Model:    c.model,
+		Messages: messages,
+		Tools:    tools,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("inference/cloud: marshal: %w", err)
+	}
+
+	url := c.baseURL + "/v1/chat/completions"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("inference/cloud: build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+
+	start := time.Now()
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("inference/cloud: request: %w", err)
+	}
+	defer resp.Body.Close()
+	elapsed := time.Since(start).Milliseconds()
+
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return nil, fmt.Errorf("inference/cloud: HTTP %d: %s", resp.StatusCode, raw)
+	}
+
+	var cr chatResponseWithTools
+	if err := json.NewDecoder(resp.Body).Decode(&cr); err != nil {
+		return nil, fmt.Errorf("inference/cloud: decode: %w", err)
+	}
+	if len(cr.Choices) == 0 {
+		return nil, fmt.Errorf("inference/cloud: empty choices")
+	}
+
+	return &ToolCompletionResult{
+		Content:   cr.Choices[0].Message.Content,
+		ToolCalls: cr.Choices[0].Message.ToolCalls,
+		Routing:   "cloud",
+		LatencyMS: elapsed,
+	}, nil
+}
+
 // Ping checks whether the cloud provider is reachable.
 func (c *CloudBackend) Ping(ctx context.Context) error {
 	if c.format == "anthropic" {

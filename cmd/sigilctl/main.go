@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/wambozi/sigil/internal/event"
+	"github.com/wambozi/sigil/internal/plugin"
 	"github.com/wambozi/sigil/internal/inference"
 	"github.com/wambozi/sigil/internal/socket"
 	"github.com/wambozi/sigil/internal/store"
@@ -102,6 +103,10 @@ func run() error {
 		return cmdDay(*socketPath)
 	case "ml":
 		return cmdML(*socketPath, args)
+	case "plugin":
+		return cmdPlugin(args)
+	case "ask":
+		return cmdAsk(*socketPath, args)
 	default:
 		return fmt.Errorf("unknown command %q — run sigilctl -help", cmd)
 	}
@@ -1219,6 +1224,126 @@ func cmdMLPredict(socketPath string, endpoint string, kvPairs []string) error {
 	fmt.Printf("Latency:   %dms\n", pred.LatencyMS)
 	for k, v := range pred.Result {
 		fmt.Printf("  %s: %v\n", k, v)
+	}
+	return nil
+}
+
+// --- Plugin commands --------------------------------------------------------
+
+func cmdPlugin(args []string) error {
+	if len(args) == 0 {
+		return cmdPluginList()
+	}
+	switch args[0] {
+	case "list":
+		return cmdPluginList()
+	case "list-available":
+		return cmdPluginListAvailable(args[1:])
+	case "install":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: sigilctl plugin install <name> [--brew]")
+		}
+		method := plugin.DetectInstallMethod()
+		for _, a := range args[2:] {
+			if a == "--brew" {
+				method = plugin.InstallBrew
+			}
+		}
+		return plugin.Install(args[1], method)
+	case "setup":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: sigilctl plugin setup <name>")
+		}
+		reader := bufio.NewReader(os.Stdin)
+		toml, err := plugin.Setup(args[1], reader)
+		if err != nil {
+			return err
+		}
+		fmt.Println("\nAdd this to your ~/.config/sigil/config.toml:\n")
+		fmt.Println(toml)
+		return nil
+	default:
+		return fmt.Errorf("unknown plugin subcommand %q — use: list, list-available, install, setup", args[0])
+	}
+}
+
+func cmdPluginList() error {
+	reg := plugin.Registry()
+	installed := 0
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "PLUGIN\tSTATUS\tCATEGORY\tDESCRIPTION")
+	for _, e := range reg {
+		status := "not installed"
+		if plugin.IsInstalled(e.Name) {
+			status = "installed"
+			installed++
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", e.Name, status, e.Category, e.Description)
+	}
+	w.Flush()
+	fmt.Printf("\n%d/%d plugins installed\n", installed, len(reg))
+	return nil
+}
+
+func cmdPluginListAvailable(args []string) error {
+	version := ""
+	if len(args) > 0 {
+		version = args[0]
+	}
+
+	var entries []plugin.RegistryEntry
+	if version != "" {
+		entries = plugin.ByVersion(version)
+		if len(entries) == 0 {
+			return fmt.Errorf("no plugins found for version %q", version)
+		}
+	} else {
+		entries = plugin.Registry()
+	}
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "PLUGIN\tVERSION\tCATEGORY\tLANG\tINSTALLED\tDESCRIPTION")
+	for _, e := range entries {
+		installed := "no"
+		if plugin.IsInstalled(e.Name) {
+			installed = "yes"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			e.Name, e.Version, e.Category, e.Language, installed, e.Description)
+	}
+	w.Flush()
+	return nil
+}
+
+// --- Ask command -----------------------------------------------------------
+
+func cmdAsk(socketPath string, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: sigilctl ask \"your question here\"")
+	}
+	query := strings.Join(args, " ")
+
+	resp, err := call(socketPath, "ask", map[string]string{"query": query})
+	if err != nil {
+		return err
+	}
+	if !resp.OK {
+		return fmt.Errorf("daemon error: %s", resp.Error)
+	}
+
+	var result struct {
+		Answer        string `json:"answer"`
+		ToolCallsMade int    `json:"tool_calls_made"`
+		LatencyMS     int64  `json:"latency_ms"`
+	}
+	if err := json.Unmarshal(resp.Payload, &result); err != nil {
+		return fmt.Errorf("decode: %w", err)
+	}
+
+	fmt.Println(result.Answer)
+	if result.ToolCallsMade > 0 {
+		fmt.Printf("\n[%d tool calls, %dms]\n", result.ToolCallsMade, result.LatencyMS)
 	}
 	return nil
 }

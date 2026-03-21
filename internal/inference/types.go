@@ -20,3 +20,16 @@ type chatChoice struct {
 type chatResponse struct {
 	Choices []chatChoice `json:"choices"`
 }
+
+// chatResponseWithTools is the response shape when tool_calls may be present.
+type chatToolChoice struct {
+	Message struct {
+		Role      string         `json:"role"`
+		Content   string         `json:"content"`
+		ToolCalls []ChatToolCall `json:"tool_calls,omitempty"`
+	} `json:"message"`
+}
+
+type chatResponseWithTools struct {
+	Choices []chatToolChoice `json:"choices"`
+}

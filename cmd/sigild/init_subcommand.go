@@ -14,6 +14,7 @@ import (
 	"github.com/wambozi/sigil/internal/assets"
 	"github.com/wambozi/sigil/internal/config"
 	"github.com/wambozi/sigil/internal/inference"
+	"github.com/wambozi/sigil/internal/plugin"
 )
 
 // runInit implements the "sigild init" subcommand.
@@ -44,20 +45,23 @@ func runInit() error {
 	// 4. ML setup
 	mlToml := setupML(reader)
 
-	// 5. Fleet setup
+	// 5. Plugins setup
+	pluginToml := setupPlugins(reader)
+
+	// 6. Fleet setup
 	fleetToml := setupFleet(reader)
 
-	// 6. Config file
-	if err := installConfigFile(watchDirs, repoDirs, inferenceToml, mlToml, fleetToml); err != nil {
+	// 7. Config file
+	if err := installConfigFile(watchDirs, repoDirs, inferenceToml, mlToml, pluginToml, fleetToml); err != nil {
 		fmt.Fprintf(os.Stderr, "  [warn] config: %v\n", err)
 	}
 
-	// 7. Data directory
+	// 8. Data directory
 	if err := installDataDir(home); err != nil {
 		fmt.Fprintf(os.Stderr, "  [warn] data dir: %v\n", err)
 	}
 
-	// 8. System service (platform-specific auto-start)
+	// 9. System service (platform-specific auto-start)
 	switch runtime.GOOS {
 	case "linux":
 		if err := installSystemdService(home); err != nil {
@@ -410,6 +414,53 @@ func setupML(reader *bufio.Reader) string {
 	return b.String()
 }
 
+// setupPlugins offers to install v1 plugins interactively.
+func setupPlugins(reader *bufio.Reader) string {
+	fmt.Println()
+	fmt.Println("--- Plugins ---")
+
+	v1 := plugin.ByVersion("v1")
+	if len(v1) == 0 {
+		return ""
+	}
+
+	method := plugin.DetectInstallMethod()
+	var allToml strings.Builder
+
+	for _, entry := range v1 {
+		installed := plugin.IsInstalled(entry.Name)
+		status := ""
+		if installed {
+			status = " [already installed]"
+		}
+
+		prompt := fmt.Sprintf("  Install %s plugin (%s)?%s [y/N]", entry.Name, entry.Description, status)
+		if !promptYN(reader, prompt, "n") {
+			continue
+		}
+
+		if !installed {
+			if err := plugin.Install(entry.Name, method); err != nil {
+				fmt.Printf("  [warn] install failed: %v\n", err)
+				fmt.Printf("         Install manually: go install %s\n", entry.GoModule)
+				continue
+			}
+		}
+
+		// Run setup (hook installation, credential prompts).
+		toml, err := plugin.Setup(entry.Name, reader)
+		if err != nil {
+			fmt.Printf("  [warn] setup: %v\n", err)
+			continue
+		}
+		allToml.WriteString(toml)
+		allToml.WriteString("\n")
+		fmt.Printf("  [ok] %s configured\n", entry.Name)
+	}
+
+	return allToml.String()
+}
+
 func setupFleet(reader *bufio.Reader) string {
 	fmt.Println()
 	fmt.Println("--- Team Insights (Fleet Reporting) ---")
@@ -428,7 +479,7 @@ func setupFleet(reader *bufio.Reader) string {
 }
 
 // installConfigFile creates config.toml with watch dirs, repo dirs, inference, and fleet sections.
-func installConfigFile(watchDirs, repoDirs []string, inferenceTOML, mlTOML, fleetTOML string) error {
+func installConfigFile(watchDirs, repoDirs []string, inferenceTOML, mlTOML, pluginTOML, fleetTOML string) error {
 	cfgPath := config.DefaultPath()
 	if _, err := os.Stat(cfgPath); err == nil {
 		fmt.Printf("  [ok]   config already exists at %s\n", cfgPath)
@@ -468,7 +519,12 @@ func installConfigFile(watchDirs, repoDirs []string, inferenceTOML, mlTOML, flee
 	b.WriteString(inferenceTOML)
 	b.WriteString("\n\n")
 	b.WriteString(mlTOML)
-	b.WriteString("\n\n[retention]\nraw_event_days = 90\n\n")
+	b.WriteString("\n\n")
+	if pluginTOML != "" {
+		b.WriteString(pluginTOML)
+		b.WriteString("\n\n")
+	}
+	b.WriteString("[retention]\nraw_event_days = 90\n\n")
 	b.WriteString(fleetTOML)
 	b.WriteString("\n")
 
