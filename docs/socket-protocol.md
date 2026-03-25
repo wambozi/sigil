@@ -15,6 +15,7 @@ Response: {"ok":true,"payload":{...}} | {"ok":false,"error":"..."}
 
 | Method | Payload | Description |
 |--------|---------|-------------|
+| `shutdown` | none | Graceful daemon shutdown |
 | `status` | none | Daemon health check |
 | `events` | none | Recent events (last 50) |
 | `suggestions` | none | Suggestion history (last 50) |
@@ -69,5 +70,7 @@ Sessions without a `session_id` are grouped under `_unknown`.
 The `session_id` field is optional. When present (typically the shell PID via `$$`), it enables per-session grouping in the analyzer for more accurate pattern detection. Events from older shell hooks that omit this field continue to work via timestamp-gap fallback.
 
 ## Protocol Version
+
+1.2 — Added `shutdown` method for graceful daemon stop via `sigilctl stop`.
 
 1.1 — Added `sessions` method and `session_id` field to `ingest`.
