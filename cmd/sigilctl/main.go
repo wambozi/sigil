@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	goruntime "runtime"
 	"strconv"
@@ -109,6 +110,10 @@ func run() error {
 		return cmdAsk(*socketPath, args)
 	case "correct":
 		return cmdCorrect(*socketPath, args)
+	case "stop":
+		return cmdStop(*socketPath)
+	case "start":
+		return cmdStart(*socketPath)
 	default:
 		return fmt.Errorf("unknown command %q — run sigilctl -help", cmd)
 	}
@@ -920,6 +925,8 @@ func printUsage() {
 	fmt.Print(`sigilctl — Sigil OS daemon CLI
 
 Commands:
+  start                         Start the sigild daemon
+  stop                          Stop the running sigild daemon
   status                        Show daemon health and version
   events [-n N] [-offline]      List the N most recent events (default 20)
   tail                          Poll and stream live events every 2s
@@ -1373,5 +1380,99 @@ func cmdCorrect(socketPath string, args []string) error {
 		return fmt.Errorf("daemon error: %s", resp.Error)
 	}
 	fmt.Printf("Correction recorded: event %d → %s\n", eventID, args[1])
+	return nil
+}
+
+// --- Start/Stop commands ---------------------------------------------------
+
+func cmdStop(socketPath string) error {
+	resp, err := call(socketPath, "shutdown", nil)
+	if err != nil {
+		fmt.Println("sigild is not running")
+		return nil
+	}
+	if !resp.OK {
+		return fmt.Errorf("daemon error: %s", resp.Error)
+	}
+	fmt.Println("sigild is shutting down")
+	return nil
+}
+
+func cmdStart(socketPath string) error {
+	// Check if daemon is already running.
+	if _, err := call(socketPath, "status", nil); err == nil {
+		fmt.Println("sigild is already running")
+		return nil
+	}
+
+	switch goruntime.GOOS {
+	case "darwin":
+		return startDarwin()
+	case "linux":
+		return startLinux()
+	default:
+		return startDirect()
+	}
+}
+
+func startDarwin() error {
+	label := "com.sigil.sigild"
+	// Try launchctl kickstart first (works if agent is loaded but stopped).
+	uid := os.Getuid()
+	out, err := exec.Command("launchctl", "kickstart", fmt.Sprintf("gui/%d/%s", uid, label)).CombinedOutput()
+	if err == nil {
+		fmt.Println("sigild started via launchd")
+		return nil
+	}
+
+	// Fall back to bootstrap/load if the agent isn't loaded.
+	home, _ := os.UserHomeDir()
+	plist := filepath.Join(home, "Library", "LaunchAgents", label+".plist")
+	if _, statErr := os.Stat(plist); statErr != nil {
+		fmt.Println("launchd plist not found — run 'sigild init' first, or starting directly")
+		return startDirect()
+	}
+
+	out, err = exec.Command("launchctl", "load", plist).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("launchctl load: %w — %s", err, strings.TrimSpace(string(out)))
+	}
+	fmt.Println("sigild started via launchd")
+	return nil
+}
+
+func startLinux() error {
+	out, err := exec.Command("systemctl", "--user", "start", "sigild.service").CombinedOutput()
+	if err == nil {
+		fmt.Println("sigild started via systemd")
+		return nil
+	}
+
+	// If systemd unit not found, fall back to direct start.
+	if strings.Contains(string(out), "not found") || strings.Contains(string(out), "No such file") {
+		fmt.Println("systemd unit not found — run 'sigild init' first, or starting directly")
+		return startDirect()
+	}
+	return fmt.Errorf("systemctl start: %w — %s", err, strings.TrimSpace(string(out)))
+}
+
+func startDirect() error {
+	exe, err := exec.LookPath("sigild")
+	if err != nil {
+		return fmt.Errorf("sigild not found in PATH: %w", err)
+	}
+
+	cmd := exec.Command(exe)
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	cmd.Stdin = nil
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start sigild: %w", err)
+	}
+
+	// Detach — don't wait for the child.
+	_ = cmd.Process.Release()
+	fmt.Printf("sigild started (pid %d)\n", cmd.Process.Pid)
 	return nil
 }

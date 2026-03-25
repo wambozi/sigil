@@ -319,7 +319,7 @@ func run(cfg daemonConfig, log *slog.Logger) error {
 
 	// --- Socket server ------------------------------------------------------
 	srv := socket.New(cfg.socketPath, log)
-	registerHandlers(srv, db, engine, ntf, anlz, terminalSrc, log, &currentRSSMB, nextDigest, &currentProfile, cfg, startTime)
+	registerHandlers(srv, db, engine, ntf, anlz, terminalSrc, log, &currentRSSMB, nextDigest, &currentProfile, cfg, startTime, stop)
 	registerTaskHandlers(srv, taskTracker, db)
 	registerMLHandlers(srv, mlEngine, cfg.dbPath)
 
@@ -707,6 +707,7 @@ func registerHandlers(
 	currentProfile *atomic.Value,
 	cfg daemonConfig,
 	startTime time.Time,
+	cancelFunc context.CancelFunc,
 ) {
 	// status — quick health check for sigilctl and the shell.
 	srv.Handle("status", func(ctx context.Context, _ socket.Request) socket.Response {
@@ -728,6 +729,13 @@ func registerHandlers(
 			OK:      true,
 			Payload: socket.MarshalPayload(payload),
 		}
+	})
+
+	// shutdown — graceful daemon shutdown triggered by sigilctl stop.
+	srv.Handle("shutdown", func(_ context.Context, _ socket.Request) socket.Response {
+		log.Info("shutdown requested via socket")
+		go cancelFunc() // cancel in a goroutine so the response is sent first
+		return socket.Response{OK: true, Payload: socket.MarshalPayload(map[string]string{"status": "shutting_down"})}
 	})
 
 	// events — return recent events from the store.
