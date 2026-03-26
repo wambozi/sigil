@@ -16,6 +16,7 @@ Sigil observes your workflow at the metadata level — never the content:
 | **Git activity** | Commit counts, branch names, and repository paths — not diffs or commit messages |
 | **Process names** | Names of running processes (e.g., `nvim`, `go`, `docker`) — not arguments or environment variables |
 | **Window focus** | Active window title and app name on Hyprland — not window contents or input |
+| **App state** (macOS) | Structural metadata from frontmost app — workbook/sheet names, email subjects, cell addresses — never cell values, document text, or email bodies |
 | **AI interactions** | Query category, routing (local/cloud), and latency — not query text unless you enable logging |
 
 All records include a timestamp and are stored in a local SQLite database.

@@ -229,7 +229,7 @@ func run(cfg daemonConfig, log *slog.Logger) error {
 	col.Add(&sources.GitSource{RepoPaths: cfg.repoPaths})
 	col.Add(terminalSrc)
 	col.Add(&sources.HyprlandSource{})
-	addPlatformSources(col)
+	addPlatformSources(col, log)
 
 	if err := col.Start(ctx); err != nil {
 		return fmt.Errorf("start collector: %w", err)

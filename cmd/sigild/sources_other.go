@@ -2,8 +2,11 @@
 
 package main
 
-import "github.com/wambozi/sigil/internal/collector"
+import (
+	"log/slog"
 
-// addPlatformSources is a no-op on Linux and other platforms.
-// HyprlandSource (registered unconditionally) handles Linux window focus.
-func addPlatformSources(_ *collector.Collector) {}
+	"github.com/wambozi/sigil/internal/collector"
+)
+
+// addPlatformSources is a no-op on non-macOS platforms.
+func addPlatformSources(_ *collector.Collector, _ *slog.Logger) {}
