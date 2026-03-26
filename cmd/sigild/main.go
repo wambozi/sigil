@@ -206,11 +206,12 @@ func run(cfg daemonConfig, log *slog.Logger) error {
 	col.Add(&sources.GitSource{RepoPaths: cfg.repoPaths})
 	col.Add(terminalSrc)
 	col.Add(&sources.HyprlandSource{})
+	addPlatformSources(col, log)
 
 	if err := col.Start(ctx); err != nil {
 		return fmt.Errorf("start collector: %w", err)
 	}
-	log.Info("collector started", "sources", 5)
+	log.Info("collector started")
 
 	// --- Notifier -----------------------------------------------------------
 	ntf := notifier.New(db, notifier.Level(cfg.notifierLevel), log)
