@@ -49,13 +49,13 @@ func runInit() error {
 	fmt.Println("sigild init: bootstrapping Sigil OS daemon")
 	fmt.Println()
 
-	// 1. Shell hook
-	if err := installShellHook(home); err != nil {
-		fmt.Fprintf(os.Stderr, "  [warn] shell hook: %v\n", err)
-	}
-
 	if nonInteractive {
 		return runInitNonInteractive(home)
+	}
+
+	// 1. Shell hook (interactive — prompts per detected shell)
+	if err := installShellHooks(home, reader); err != nil {
+		fmt.Fprintf(os.Stderr, "  [warn] shell hook: %v\n", err)
 	}
 
 	// 2. Watch directories
@@ -106,6 +106,11 @@ func runInit() error {
 func runInitNonInteractive(home string) error {
 	fmt.Println("  [info] non-interactive mode — using defaults")
 
+	// Shell hook (non-interactive — installs only $SHELL).
+	if err := installShellHooks(home, nil); err != nil {
+		fmt.Fprintf(os.Stderr, "  [warn] shell hook: %v\n", err)
+	}
+
 	// Default watch dir: ~/code (or first existing common dir).
 	watchDir := filepath.Join(home, "code")
 	for _, candidate := range []string{"code", "projects", "src", "workspace", "dev"} {
@@ -134,53 +139,145 @@ func runInitNonInteractive(home string) error {
 	return nil
 }
 
-// installShellHook appends the appropriate source line to ~/.zshrc or ~/.bashrc.
-func installShellHook(home string) error {
-	shell := os.Getenv("SHELL")
+// shellDef describes a shell that sigild can install a hook for.
+type shellDef struct {
+	Name        string   // human-readable: "zsh", "bash"
+	Binary      string   // basename: "zsh", "bash"
+	RCFiles     []string // candidate RC files relative to $HOME
+	HookScript  string   // filename in scripts/: "shell-hook.zsh"
+	SourceLine  string   // line appended to RC file
+	DetectPaths []string // absolute paths to check for shell binary
+}
 
-	var rcFile, hookFile, sourceLine string
-	switch {
-	case strings.Contains(shell, "zsh"):
-		rcFile = filepath.Join(home, ".zshrc")
-		hookFile = "shell-hook.zsh"
-		sourceLine = `source "$HOME/.config/sigil/shell-hook.zsh"`
-	case strings.Contains(shell, "bash"):
-		rcFile = filepath.Join(home, ".bashrc")
-		hookFile = "shell-hook.bash"
-		sourceLine = `source "$HOME/.config/sigil/shell-hook.bash"`
-	default:
-		fmt.Println("  [skip] shell hook: unrecognised SHELL, install manually")
-		return nil
+var shellRegistry = []shellDef{
+	{
+		Name:        "zsh",
+		Binary:      "zsh",
+		RCFiles:     []string{".zshrc"},
+		HookScript:  "shell-hook.zsh",
+		SourceLine:  `source "$HOME/.config/sigil/shell-hook.zsh"`,
+		DetectPaths: []string{"/bin/zsh", "/usr/bin/zsh", "/usr/local/bin/zsh", "/opt/homebrew/bin/zsh"},
+	},
+	{
+		Name:        "bash",
+		Binary:      "bash",
+		RCFiles:     []string{".bashrc"},
+		HookScript:  "shell-hook.bash",
+		SourceLine:  `source "$HOME/.config/sigil/shell-hook.bash"`,
+		DetectPaths: []string{"/bin/bash", "/usr/bin/bash", "/usr/local/bin/bash", "/opt/homebrew/bin/bash"},
+	},
+}
+
+// detectShells probes the system for installed shells.
+// It prioritises the user's $SHELL, then checks DetectPaths for remaining entries.
+func detectShells(home string) []shellDef {
+	var found []shellDef
+	seen := map[string]bool{}
+	userShell := filepath.Base(os.Getenv("SHELL"))
+
+	// First pass: match $SHELL.
+	for _, sd := range shellRegistry {
+		if sd.Binary == userShell && !seen[sd.Name] {
+			found = append(found, sd)
+			seen[sd.Name] = true
+		}
 	}
 
-	// Copy hook file to config dir.
-	hookSrc := filepath.Join(home, ".config", "sigil", hookFile)
-	if err := copyEmbeddedHook(hookFile, hookSrc); err != nil {
+	// Second pass: probe DetectPaths for remaining shells.
+	for _, sd := range shellRegistry {
+		if seen[sd.Name] {
+			continue
+		}
+		for _, p := range sd.DetectPaths {
+			if _, err := os.Stat(p); err == nil {
+				found = append(found, sd)
+				seen[sd.Name] = true
+				break
+			}
+		}
+	}
+	return found
+}
+
+// installShellHookFor installs the hook for a single shell definition.
+func installShellHookFor(home string, sd shellDef) error {
+	// Copy embedded hook script to config dir.
+	hookDst := filepath.Join(home, ".config", "sigil", sd.HookScript)
+	if err := copyEmbeddedHook(sd.HookScript, hookDst); err != nil {
 		return fmt.Errorf("copy hook: %w", err)
 	}
 
-	// Check if already present in rc file.
-	rc, err := os.ReadFile(rcFile)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("read %s: %w", rcFile, err)
+	// Try each candidate RC file.
+	for _, rc := range sd.RCFiles {
+		rcFile := filepath.Join(home, rc)
+
+		// Ensure parent directory exists (e.g. ~/.config/fish/).
+		if err := os.MkdirAll(filepath.Dir(rcFile), 0o755); err != nil {
+			return fmt.Errorf("mkdir %s: %w", filepath.Dir(rcFile), err)
+		}
+
+		// Check if already present.
+		existing, err := os.ReadFile(rcFile)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("read %s: %w", rcFile, err)
+		}
+		if strings.Contains(string(existing), sd.SourceLine) {
+			fmt.Printf("  [ok]   shell hook already in %s\n", rcFile)
+			return nil
+		}
+
+		// Append source line.
+		f, err := os.OpenFile(rcFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			return fmt.Errorf("open %s: %w", rcFile, err)
+		}
+		defer f.Close()
+
+		if _, err := fmt.Fprintf(f, "\n# Sigil OS shell hook\n%s\n", sd.SourceLine); err != nil {
+			return err
+		}
+		fmt.Printf("  [ok]   shell hook appended to %s\n", rcFile)
+		return nil
 	}
-	if strings.Contains(string(rc), sourceLine) {
-		fmt.Printf("  [ok]   shell hook already in %s\n", rcFile)
+	return nil
+}
+
+// installShellHooks detects shells and installs hooks.
+// When reader is non-nil (interactive mode), it prompts per detected shell.
+// When reader is nil (non-interactive), it installs only the shell matching $SHELL.
+func installShellHooks(home string, reader *bufio.Reader) error {
+	shells := detectShells(home)
+	if len(shells) == 0 {
+		fmt.Println("  [skip] shell hook: no recognised shell found, install manually")
 		return nil
 	}
 
-	// Append source line.
-	f, err := os.OpenFile(rcFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return fmt.Errorf("open %s: %w", rcFile, err)
+	if reader == nil {
+		// Non-interactive: install only $SHELL.
+		userShell := filepath.Base(os.Getenv("SHELL"))
+		for _, sd := range shells {
+			if sd.Binary == userShell {
+				if err := installShellHookFor(home, sd); err != nil {
+					return err
+				}
+				return nil
+			}
+		}
+		// If $SHELL didn't match any detected shell, install the first one.
+		if err := installShellHookFor(home, shells[0]); err != nil {
+			return err
+		}
+		return nil
 	}
-	defer f.Close()
 
-	_, err = fmt.Fprintf(f, "\n# Sigil OS shell hook\n%s\n", sourceLine)
-	if err != nil {
-		return err
+	// Interactive: prompt for each detected shell.
+	for _, sd := range shells {
+		if promptYN(reader, fmt.Sprintf("  Install shell hook for %s? [Y/n]", sd.Name), "y") {
+			if err := installShellHookFor(home, sd); err != nil {
+				fmt.Fprintf(os.Stderr, "  [warn] %s hook: %v\n", sd.Name, err)
+			}
+		}
 	}
-	fmt.Printf("  [ok]   shell hook appended to %s\n", rcFile)
 	return nil
 }
 
