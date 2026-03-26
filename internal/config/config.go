@@ -153,7 +153,7 @@ type SyncConfig struct {
 	APIURL   string `toml:"api_url"`
 	APIKey   string `toml:"api_key"`
 	Interval string `toml:"interval"`   // duration string, default "5s"
-	Batch    int    `toml:"batch_size"`  // rows per batch, default 100
+	Batch    int    `toml:"batch_size"` // rows per batch, default 100
 }
 
 // Defaults returns a Config populated with sensible built-in values.
