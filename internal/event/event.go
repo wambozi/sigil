@@ -9,13 +9,14 @@ import "time"
 type Kind string
 
 const (
-	KindFile     Kind = "file"      // inotify / fsnotify
-	KindProcess  Kind = "process"   // /proc polling
-	KindHyprland Kind = "hyprland"  // Hyprland compositor IPC
-	KindGit      Kind = "git"       // git repository activity
-	KindTerminal Kind = "terminal"  // shell command (pushed via socket ingest)
-	KindAI       Kind = "ai"        // AI interaction (query, suggestion)
-	KindAppState Kind = "app_state" // frontmost app internal state (macOS)
+	KindFile      Kind = "file"      // inotify / fsnotify
+	KindProcess   Kind = "process"   // /proc polling
+	KindHyprland  Kind = "hyprland"  // Hyprland compositor IPC
+	KindGit       Kind = "git"       // git repository activity
+	KindTerminal  Kind = "terminal"  // shell command (pushed via socket ingest)
+	KindAI        Kind = "ai"        // AI interaction (query, suggestion)
+	KindClipboard Kind = "clipboard" // clipboard changes
+	KindAppState  Kind = "app_state" // frontmost app internal state
 )
 
 // Event is the atomic unit of observation.  Payload is kept as a generic map
