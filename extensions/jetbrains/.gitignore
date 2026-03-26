@@ -1,0 +1,11 @@
+# Build output
+build/
+out/
+
+# IDE files
+.idea/
+*.iml
+
+# Gradle
+.gradle/
+!gradle/wrapper/gradle-wrapper.jar

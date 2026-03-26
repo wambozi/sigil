@@ -126,6 +126,18 @@ npm run package                   # produce .vsix
 
 When the extension is connected, desktop notifications are automatically suppressed (single-channel routing via `HasExternalSurface` on the notifier).
 
+## JetBrains Extension
+
+The `extensions/jetbrains/` directory contains a Kotlin IntelliJ Platform plugin that surfaces sigild suggestions as IDE notification balloons in JetBrains IDEs (IntelliJ IDEA, PyCharm, GoLand, WebStorm).
+
+```bash
+cd extensions/jetbrains
+gradle wrapper --gradle-version 8.5   # one-time: generate wrapper
+./gradlew buildPlugin                 # produces .zip in build/distributions/
+```
+
+When the extension is connected, desktop notifications are automatically suppressed (single-channel routing via `HasExternalSurface` on the notifier).
+
 ## Community & Governance Files
 
 When making changes that affect the contributor experience — adding CI pipelines, changing build steps, modifying the DAG, adding new data collection, or changing quality gates — update these files as needed:
