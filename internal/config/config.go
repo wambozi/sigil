@@ -12,6 +12,10 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
+// DefaultFleetEndpoint is the production Fleet Aggregation Layer URL.
+// Used when Fleet is enabled but no explicit endpoint is configured.
+const DefaultFleetEndpoint = "https://fleet.sigil.dev/api/v1"
+
 // Config holds every tunable parameter for sigild.
 // Zero values mean "use the built-in default" so callers can detect which
 // fields were actually set by the file.
@@ -144,6 +148,14 @@ type FleetConfig struct {
 	Endpoint string `toml:"endpoint"`
 	Interval string `toml:"interval"` // duration string, default "1h"
 	NodeID   string `toml:"node_id"`  // auto-generated if empty
+}
+
+// ApplyDefaults fills in zero-value fields that have well-known defaults.
+// Call after Load to ensure fleet-enabled configs get the production endpoint.
+func (c *Config) ApplyDefaults() {
+	if c.Fleet.Endpoint == "" && c.Fleet.Enabled {
+		c.Fleet.Endpoint = DefaultFleetEndpoint
+	}
 }
 
 // Defaults returns a Config populated with sensible built-in values.

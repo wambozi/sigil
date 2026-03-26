@@ -525,11 +525,7 @@ func setupFleet(reader *bufio.Reader) string {
 		return "[fleet]\nenabled = false\n"
 	}
 
-	endpoint := promptString(reader, "  Fleet endpoint URL []:", "")
-	if endpoint == "" {
-		fmt.Println("  [info] no endpoint configured; fleet reporting will be inactive")
-		return "[fleet]\nenabled = false\n"
-	}
+	endpoint := promptString(reader, fmt.Sprintf("  Fleet endpoint URL [%s]:", config.DefaultFleetEndpoint), config.DefaultFleetEndpoint)
 
 	return fmt.Sprintf("[fleet]\nenabled = true\nendpoint = %q\n", endpoint)
 }
