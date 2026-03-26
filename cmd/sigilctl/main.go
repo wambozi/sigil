@@ -106,6 +106,8 @@ func run() error {
 		return cmdML(*socketPath, args)
 	case "plugin":
 		return cmdPlugin(args)
+	case "sync":
+		return cmdSync(*socketPath, args)
 	case "ask":
 		return cmdAsk(*socketPath, args)
 	case "correct":
@@ -817,6 +819,84 @@ func cmdFleetOptOut(socketPath string) error {
 	return nil
 }
 
+// --- Sync commands ----------------------------------------------------------
+
+func cmdSync(socketPath string, args []string) error {
+	if len(args) == 0 {
+		fmt.Println("Usage: sigilctl sync <status|pause|resume>")
+		return nil
+	}
+	switch args[0] {
+	case "status":
+		return cmdSyncStatus(socketPath)
+	case "pause":
+		return cmdSyncPause(socketPath)
+	case "resume":
+		return cmdSyncResume(socketPath)
+	default:
+		return fmt.Errorf("unknown sync command %q — use status, pause, or resume", args[0])
+	}
+}
+
+func cmdSyncStatus(socketPath string) error {
+	resp, err := call(socketPath, "sync-status", nil)
+	if err != nil {
+		return err
+	}
+	if !resp.OK {
+		return fmt.Errorf("sync status: %s", resp.Error)
+	}
+	var status map[string]any
+	_ = json.Unmarshal(resp.Payload, &status)
+
+	enabled, _ := status["enabled"].(bool)
+	if !enabled {
+		fmt.Println("Sync agent: disabled")
+		return nil
+	}
+
+	paused, _ := status["paused"].(bool)
+	state := "running"
+	if paused {
+		state = "paused"
+	}
+	fmt.Printf("Sync agent: %s\n", state)
+	fmt.Printf("  API URL:  %v\n", status["api_url"])
+	fmt.Printf("  Interval: %v\n", status["interval"])
+
+	if cursors, ok := status["cursors"].(map[string]any); ok {
+		fmt.Println("  Cursors:")
+		for table, cur := range cursors {
+			fmt.Printf("    %-16s %v\n", table, cur)
+		}
+	}
+	return nil
+}
+
+func cmdSyncPause(socketPath string) error {
+	resp, err := call(socketPath, "sync-pause", nil)
+	if err != nil {
+		return err
+	}
+	if !resp.OK {
+		return fmt.Errorf("sync pause: %s", resp.Error)
+	}
+	fmt.Println("Sync agent paused.")
+	return nil
+}
+
+func cmdSyncResume(socketPath string) error {
+	resp, err := call(socketPath, "sync-resume", nil)
+	if err != nil {
+		return err
+	}
+	if !resp.OK {
+		return fmt.Errorf("sync resume: %s", resp.Error)
+	}
+	fmt.Println("Sync agent resumed.")
+	return nil
+}
+
 // cmdCredential dispatches credential subcommands: add, list, revoke.
 func cmdCredential(socketPath string, args []string) error {
 	if len(args) == 0 {
@@ -949,6 +1029,9 @@ Commands:
   fleet status                  Show fleet reporting opt-in status
   fleet preview                 Show what fleet data will be sent
   fleet opt-out                 Disable fleet reporting
+  sync status                   Show sync agent status and cursors
+  sync pause                    Temporarily pause cloud sync
+  sync resume                   Resume cloud sync after pause
   credential add <name>         Generate a new remote-access credential
   credential list               List all credentials
   credential revoke <name>      Revoke a credential immediately

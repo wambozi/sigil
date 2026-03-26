@@ -25,6 +25,7 @@ type Config struct {
 	Schedule  ScheduleConfig          `toml:"schedule"`
 	Fleet     FleetConfig             `toml:"fleet"`
 	Network   NetworkConfig           `toml:"network"`
+	Sync      SyncConfig              `toml:"sync"`
 }
 
 // PluginConfig defines a single plugin's configuration.
@@ -144,6 +145,15 @@ type FleetConfig struct {
 	Endpoint string `toml:"endpoint"`
 	Interval string `toml:"interval"` // duration string, default "1h"
 	NodeID   string `toml:"node_id"`  // auto-generated if empty
+}
+
+// SyncConfig controls the Sync Agent that streams SQLite changes to the cloud.
+type SyncConfig struct {
+	Enabled  bool   `toml:"enabled"`
+	APIURL   string `toml:"api_url"`
+	APIKey   string `toml:"api_key"`
+	Interval string `toml:"interval"`   // duration string, default "5s"
+	Batch    int    `toml:"batch_size"`  // rows per batch, default 100
 }
 
 // Defaults returns a Config populated with sensible built-in values.
@@ -315,6 +325,23 @@ func merge(dst, src *Config) {
 	}
 	if len(src.Network.AllowedCredentials) > 0 {
 		dst.Network.AllowedCredentials = src.Network.AllowedCredentials
+	}
+
+	// Sync
+	if src.Sync.Enabled {
+		dst.Sync.Enabled = true
+	}
+	if src.Sync.APIURL != "" {
+		dst.Sync.APIURL = src.Sync.APIURL
+	}
+	if src.Sync.APIKey != "" {
+		dst.Sync.APIKey = src.Sync.APIKey
+	}
+	if src.Sync.Interval != "" {
+		dst.Sync.Interval = src.Sync.Interval
+	}
+	if src.Sync.Batch != 0 {
+		dst.Sync.Batch = src.Sync.Batch
 	}
 
 	// Plugins (map — just replace entirely if set in file)

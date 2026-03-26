@@ -156,6 +156,37 @@ the aggregated summary described above is sent.
 
 ---
 
+## Sync Agent (optional)
+
+When sync is enabled, Sigil streams local SQLite rows to the configured cloud
+ingest API. This transmits **raw event metadata** (the same data stored locally
+in your SQLite database) — file paths, command strings, git branch names,
+suggestions, and ML predictions. It does **not** transmit file contents, model
+weights, or environment variables.
+
+Sync is explicitly opt-in and disabled by default:
+
+```toml
+[sync]
+enabled = false   # set to true to opt in
+api_url = "https://your-cloud-endpoint"
+api_key = "your-api-key"
+```
+
+You can inspect sync status and cursors at any time:
+
+```bash
+sigilctl sync status    # show what tables are synced and cursor positions
+sigilctl sync pause     # temporarily stop syncing
+sigilctl sync resume    # resume syncing
+```
+
+Only these tables are synced: `events`, `tasks`, `suggestions`,
+`ml_predictions`, `ml_events`, `patterns`. The sync agent tracks a per-table
+cursor so it only sends new rows, never re-sends old data.
+
+---
+
 ## Questions or concerns
 
 Open an issue at <https://github.com/wambozi/sigil/issues>.

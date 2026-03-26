@@ -37,6 +37,7 @@ body:
         - Inference engine
         - Actuator system
         - Fleet / enterprise
+        - Sync agent
         - Installer / packaging
         - Documentation
         - Other
