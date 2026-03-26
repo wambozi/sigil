@@ -139,13 +139,13 @@ func (h *handlers) queryOverview(r *http.Request, orgID, from, to string) (any, 
 	defer rows.Close()
 
 	type dayRow struct {
-		Date             string  `json:"date"`
-		NodeCount        int     `json:"node_count"`
-		AvgAcceptRate    float64 `json:"avg_accept_rate"`
-		AvgTier          float64 `json:"avg_tier"`
-		AvgRoutingRatio  float64 `json:"avg_routing_ratio"`
-		AvgBuildRate     float64 `json:"avg_build_rate"`
-		TotalEvents      int64   `json:"total_events"`
+		Date            string  `json:"date"`
+		NodeCount       int     `json:"node_count"`
+		AvgAcceptRate   float64 `json:"avg_accept_rate"`
+		AvgTier         float64 `json:"avg_tier"`
+		AvgRoutingRatio float64 `json:"avg_routing_ratio"`
+		AvgBuildRate    float64 `json:"avg_build_rate"`
+		TotalEvents     int64   `json:"total_events"`
 	}
 
 	var results []dayRow
