@@ -54,7 +54,7 @@ func runInit() error {
 	}
 
 	// 1. Shell hook (interactive — prompts per detected shell)
-	if err := installShellHooks(home, reader); err != nil {
+	if err := installShellHooks(home, reader, shellRegistry); err != nil {
 		fmt.Fprintf(os.Stderr, "  [warn] shell hook: %v\n", err)
 	}
 
@@ -107,7 +107,7 @@ func runInitNonInteractive(home string) error {
 	fmt.Println("  [info] non-interactive mode — using defaults")
 
 	// Shell hook (non-interactive — installs only $SHELL).
-	if err := installShellHooks(home, nil); err != nil {
+	if err := installShellHooks(home, nil, shellRegistry); err != nil {
 		fmt.Fprintf(os.Stderr, "  [warn] shell hook: %v\n", err)
 	}
 
@@ -170,13 +170,13 @@ var shellRegistry = []shellDef{
 
 // detectShells probes the system for installed shells.
 // It prioritises the user's $SHELL, then checks DetectPaths for remaining entries.
-func detectShells(home string) []shellDef {
+func detectShells(registry []shellDef) []shellDef {
 	var found []shellDef
 	seen := map[string]bool{}
 	userShell := filepath.Base(os.Getenv("SHELL"))
 
 	// First pass: match $SHELL.
-	for _, sd := range shellRegistry {
+	for _, sd := range registry {
 		if sd.Binary == userShell && !seen[sd.Name] {
 			found = append(found, sd)
 			seen[sd.Name] = true
@@ -184,7 +184,7 @@ func detectShells(home string) []shellDef {
 	}
 
 	// Second pass: probe DetectPaths for remaining shells.
-	for _, sd := range shellRegistry {
+	for _, sd := range registry {
 		if seen[sd.Name] {
 			continue
 		}
@@ -197,6 +197,17 @@ func detectShells(home string) []shellDef {
 		}
 	}
 	return found
+}
+
+// writeSourceLine appends the shell hook source line to an RC file.
+func writeSourceLine(rcFile, sourceLine string) error {
+	f, err := os.OpenFile(rcFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", rcFile, err)
+	}
+	defer f.Close()
+	_, err = fmt.Fprintf(f, "\n# Sigil OS shell hook\n%s\n", sourceLine)
+	return err
 }
 
 // installShellHookFor installs the hook for a single shell definition.
@@ -226,27 +237,21 @@ func installShellHookFor(home string, sd shellDef) error {
 			return nil
 		}
 
-		// Append source line.
-		f, err := os.OpenFile(rcFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-		if err != nil {
-			return fmt.Errorf("open %s: %w", rcFile, err)
-		}
-		defer f.Close()
-
-		if _, err := fmt.Fprintf(f, "\n# Sigil OS shell hook\n%s\n", sd.SourceLine); err != nil {
+		// Append source line via helper so defer scopes to the call.
+		if err := writeSourceLine(rcFile, sd.SourceLine); err != nil {
 			return err
 		}
 		fmt.Printf("  [ok]   shell hook appended to %s\n", rcFile)
 		return nil
 	}
-	return nil
+	return fmt.Errorf("no writable RC file found for %s (candidates: %v)", sd.Name, sd.RCFiles)
 }
 
 // installShellHooks detects shells and installs hooks.
 // When reader is non-nil (interactive mode), it prompts per detected shell.
 // When reader is nil (non-interactive), it installs only the shell matching $SHELL.
-func installShellHooks(home string, reader *bufio.Reader) error {
-	shells := detectShells(home)
+func installShellHooks(home string, reader *bufio.Reader, registry []shellDef) error {
+	shells := detectShells(registry)
 	if len(shells) == 0 {
 		fmt.Println("  [skip] shell hook: no recognised shell found, install manually")
 		return nil
@@ -254,20 +259,16 @@ func installShellHooks(home string, reader *bufio.Reader) error {
 
 	if reader == nil {
 		// Non-interactive: install only $SHELL.
+		// detectShells returns the $SHELL match first, so shells[0] is
+		// the user's shell when it exists in the registry. If it doesn't
+		// match (e.g. $SHELL is fish but registry only has zsh/bash),
+		// all entries come from the probe pass — skip rather than surprise.
 		userShell := filepath.Base(os.Getenv("SHELL"))
-		for _, sd := range shells {
-			if sd.Binary == userShell {
-				if err := installShellHookFor(home, sd); err != nil {
-					return err
-				}
-				return nil
-			}
+		if shells[0].Binary != userShell {
+			fmt.Printf("  [skip] $SHELL=%q is not in the shell registry; run 'sigild init' interactively to choose a shell\n", os.Getenv("SHELL"))
+			return nil
 		}
-		// If $SHELL didn't match any detected shell, install the first one.
-		if err := installShellHookFor(home, shells[0]); err != nil {
-			return err
-		}
-		return nil
+		return installShellHookFor(home, shells[0])
 	}
 
 	// Interactive: prompt for each detected shell.

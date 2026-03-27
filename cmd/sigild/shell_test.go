@@ -60,11 +60,8 @@ func TestDetectShells(t *testing.T) {
 			t.Setenv("SHELL", tt.shell)
 
 			// Build a custom registry pointing DetectPaths into tmp.
-			origRegistry := shellRegistry
-			defer func() { shellRegistry = origRegistry }()
-
 			var reg []shellDef
-			for _, sd := range origRegistry {
+			for _, sd := range shellRegistry {
 				clone := sd
 				var paths []string
 				for _, origPath := range sd.DetectPaths {
@@ -74,7 +71,6 @@ func TestDetectShells(t *testing.T) {
 				clone.DetectPaths = paths
 				reg = append(reg, clone)
 			}
-			shellRegistry = reg
 
 			// Create fake binaries.
 			for bin := range tt.binaries {
@@ -84,7 +80,7 @@ func TestDetectShells(t *testing.T) {
 				}
 			}
 
-			got := detectShells(tmp)
+			got := detectShells(reg)
 			var gotNames []string
 			for _, sd := range got {
 				gotNames = append(gotNames, sd.Name)
@@ -104,11 +100,12 @@ func TestDetectShells(t *testing.T) {
 
 func TestInstallShellHookFor(t *testing.T) {
 	tests := []struct {
-		name       string
-		existingRC string // existing RC file content ("" means no file)
-		wantInRC   string // substring expected in RC file after install
-		wantErr    bool
-		idempotent bool // if true, run twice and ensure no duplication
+		name         string
+		existingRC   string // existing RC file content ("" means no file)
+		wantInRC     string // substring expected in RC file after install
+		wantErr      bool
+		idempotent   bool // if true, run twice and ensure no duplication
+		missingAsset bool // if true, use a nonexistent hook script name
 	}{
 		{
 			name:       "fresh_install",
@@ -127,8 +124,9 @@ func TestInstallShellHookFor(t *testing.T) {
 			idempotent: true,
 		},
 		{
-			name:    "missing_asset",
-			wantErr: true,
+			name:         "missing_asset",
+			wantErr:      true,
+			missingAsset: true,
 		},
 	}
 
@@ -144,13 +142,13 @@ func TestInstallShellHookFor(t *testing.T) {
 				SourceLine: `source "$HOME/.config/sigil/shell-hook.zsh"`,
 			}
 
-			if tt.name == "missing_asset" {
+			if tt.missingAsset {
 				sd.HookScript = "nonexistent-hook.zsh"
 			}
 
 			// Pre-create the embedded hook script in the config dir
 			// (simulating what copyEmbeddedHook does) — except for missing_asset test.
-			if tt.name != "missing_asset" {
+			if !tt.missingAsset {
 				hookDir := filepath.Join(home, ".config", "sigil")
 				if err := os.MkdirAll(hookDir, 0o700); err != nil {
 					t.Fatal(err)
