@@ -170,6 +170,8 @@ func parseAnalyzeEvery(cfg *config.Config) time.Duration {
 // Tiers set defaults, not hard limits — explicit user settings are preserved.
 func applyTierDefaults(cfg *config.Config) {
 	switch cfg.Cloud.Tier {
+	case "", "free":
+		// Free tier: all defaults are local (already the case).
 	case "pro":
 		if cfg.Inference.Mode == "" {
 			cfg.Inference.Mode = "remotefirst"
@@ -178,12 +180,13 @@ func applyTierDefaults(cfg *config.Config) {
 		if cfg.Inference.Mode == "" {
 			cfg.Inference.Mode = "remotefirst"
 		}
-		// Team defaults to sync enabled, but don't override explicit config.
-		// (CloudSync.Enabled defaults to false; if the user hasn't set it,
-		// the zero value is indistinguishable from an explicit false, so we
-		// leave it alone to avoid surprising the user.)
+		if cfg.CloudSync.Enabled == nil {
+			t := true
+			cfg.CloudSync.Enabled = &t
+		}
+	default:
+		slog.Warn("unrecognized cloud tier, using free-tier defaults", "tier", cfg.Cloud.Tier)
 	}
-	// Free tier: all defaults are local (already the case).
 }
 
 // --- Runtime ----------------------------------------------------------------

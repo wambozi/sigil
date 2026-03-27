@@ -76,10 +76,18 @@ type CloudConfig struct {
 
 // CloudSyncConfig controls the sync agent behavior.
 type CloudSyncConfig struct {
-	Enabled         bool   `toml:"enabled"`
-	APIURL          string `toml:"api_url"`
-	BatchSize       int    `toml:"batch_size"`
-	PollIntervalSec int    `toml:"poll_interval_sec"`
+	Enabled      *bool  `toml:"enabled"`
+	APIURL       string `toml:"api_url"`
+	BatchSize    int    `toml:"batch_size"`
+	PollInterval string `toml:"poll_interval"` // duration string, e.g. "60s"
+}
+
+// IsEnabled returns whether cloud sync is enabled (defaults to false if unset).
+func (c CloudSyncConfig) IsEnabled() bool {
+	if c.Enabled == nil {
+		return false
+	}
+	return *c.Enabled
 }
 
 // NetworkConfig controls the optional TCP listener.
@@ -184,6 +192,12 @@ func Defaults() *Config {
 		},
 		Retention: RetentionConfig{
 			RawEventDays: 90,
+		},
+		Fleet: FleetConfig{
+			Endpoint: DefaultFleetEndpoint,
+		},
+		CloudSync: CloudSyncConfig{
+			APIURL: DefaultCloudSyncURL,
 		},
 	}
 }
@@ -383,8 +397,8 @@ func merge(dst, src *Config) {
 	}
 
 	// Cloud sync
-	if src.CloudSync.Enabled {
-		dst.CloudSync.Enabled = true
+	if src.CloudSync.Enabled != nil {
+		dst.CloudSync.Enabled = src.CloudSync.Enabled
 	}
 	if src.CloudSync.APIURL != "" {
 		dst.CloudSync.APIURL = src.CloudSync.APIURL
@@ -392,8 +406,8 @@ func merge(dst, src *Config) {
 	if src.CloudSync.BatchSize != 0 {
 		dst.CloudSync.BatchSize = src.CloudSync.BatchSize
 	}
-	if src.CloudSync.PollIntervalSec != 0 {
-		dst.CloudSync.PollIntervalSec = src.CloudSync.PollIntervalSec
+	if src.CloudSync.PollInterval != "" {
+		dst.CloudSync.PollInterval = src.CloudSync.PollInterval
 	}
 }
 

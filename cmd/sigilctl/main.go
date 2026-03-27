@@ -934,7 +934,7 @@ func cmdAuth(socketPath string, args []string) error {
 	case "login":
 		return cmdAuthLogin()
 	case "status":
-		return cmdAuthStatus(socketPath)
+		return cmdAuthStatus()
 	case "logout":
 		return cmdAuthLogout()
 	default:
@@ -946,7 +946,10 @@ func cmdAuth(socketPath string, args []string) error {
 func cmdAuthLogin() error {
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Print("Enter your Sigil API key: ")
-	key, _ := reader.ReadString('\n')
+	key, readErr := reader.ReadString('\n')
+	if readErr != nil {
+		return fmt.Errorf("read API key: %w", readErr)
+	}
 	key = strings.TrimSpace(key)
 
 	if key == "" {
@@ -968,7 +971,7 @@ func cmdAuthLogin() error {
 }
 
 // cmdAuthStatus reads the config and displays tier, API key validity, and enabled features.
-func cmdAuthStatus(socketPath string) error {
+func cmdAuthStatus() error {
 	cfgPath := config.DefaultPath()
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
@@ -982,8 +985,12 @@ func cmdAuthStatus(socketPath string) error {
 	fmt.Printf("Tier:      %s\n", tier)
 
 	if cfg.Cloud.APIKey != "" {
-		masked := cfg.Cloud.APIKey[:9] + "..." + cfg.Cloud.APIKey[len(cfg.Cloud.APIKey)-4:]
-		fmt.Printf("API key:   %s\n", masked)
+		key := cfg.Cloud.APIKey
+		if len(key) >= 13 {
+			fmt.Printf("API key:   %s...%s\n", key[:9], key[len(key)-4:])
+		} else {
+			fmt.Printf("API key:   (set, too short to display)\n")
+		}
 	} else {
 		fmt.Println("API key:   (not set)")
 	}
@@ -993,7 +1000,7 @@ func cmdAuthStatus(socketPath string) error {
 	}
 
 	fmt.Printf("Inference: %s\n", cfg.Inference.Mode)
-	fmt.Printf("Sync:      %t\n", cfg.CloudSync.Enabled)
+	fmt.Printf("Sync:      %t\n", cfg.CloudSync.IsEnabled())
 
 	return nil
 }
@@ -1020,19 +1027,23 @@ func cmdAuthLogout() error {
 	return nil
 }
 
-// writeConfig marshals cfg to TOML and writes it to path.
+// writeConfig marshals cfg to TOML and writes it atomically to path
+// via a temp-file + rename pattern.
 func writeConfig(path string, cfg *config.Config) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
 	}
-
 	data, err := toml.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
 	}
-
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		return fmt.Errorf("write config: %w", err)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return fmt.Errorf("write temp config: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("rename config: %w", err)
 	}
 	fmt.Printf("Config written to %s\n", path)
 	return nil
