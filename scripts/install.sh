@@ -10,7 +10,12 @@
 # Requires: curl (or wget), sha256sum (or shasum)
 # Does NOT require root/sudo.
 
-set -e
+set -eu
+
+if [ -z "${HOME:-}" ]; then
+  printf 'Error: %s\n' "HOME is not set; cannot determine install paths" >&2
+  exit 1
+fi
 
 REPO="sigil-tech/sigil"
 API_BASE="https://api.github.com/repos/${REPO}"
@@ -20,7 +25,7 @@ CONFIG_DIR="${XDG_CONFIG_HOME:-${HOME}/.config}/sigil"
 
 CORE_BINS="sigild sigilctl"
 PLUGIN_BINS="sigil-plugin-claude sigil-plugin-github sigil-plugin-jira sigil-plugin-vscode"
-ALL_BINS="${CORE_BINS} ${PLUGIN_BINS}"
+ALL_BINS="${CORE_BINS}"
 
 # --- Helpers ------------------------------------------------------------------
 
@@ -37,11 +42,12 @@ usage() {
   cat <<'USAGE'
 Usage: install.sh [OPTIONS]
 
-Install sigild, sigilctl, and v1 plugin binaries from GitHub Releases.
+Install sigild and sigilctl from GitHub Releases.
 
 Options:
-  --help        Show this help message and exit
-  --uninstall   Remove installed binaries and config directory
+  --help           Show this help message and exit
+  --with-plugins   Also install plugin binaries (claude, github, jira, vscode)
+  --uninstall      Remove installed binaries and config directory
 
 Environment:
   PREFIX              Install directory (default: $HOME/.local/bin)
@@ -58,9 +64,9 @@ USAGE
 # Portable HTTP GET to stdout. Prefers curl, falls back to wget.
 fetch() {
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$1"
+    curl --proto '=https' --tlsv1.2 -fsSL "$1"
   elif command -v wget >/dev/null 2>&1; then
-    wget -qO- "$1"
+    wget -qO- "$1" || err "download failed: $1"
   else
     err "curl or wget is required"
   fi
@@ -69,21 +75,31 @@ fetch() {
 # Portable HTTP GET to file. Prefers curl, falls back to wget.
 fetch_to() {
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL -o "$2" "$1"
+    curl --proto '=https' --tlsv1.2 -fsSL -o "$2" "$1"
   elif command -v wget >/dev/null 2>&1; then
-    wget -qO "$2" "$1"
+    wget -qO "$2" "$1" || err "download failed: $1"
   else
     err "curl or wget is required"
   fi
 }
 
 # Portable SHA256 verification. Prefers sha256sum, falls back to shasum.
+# Usage: verify_sha256 <checksum_file> <bin1> <bin2> ...
 verify_sha256() {
   checksum_file="$1"
+  shift
+  # Filter checksum file to only include entries for downloaded binaries
+  filtered="${checksum_file}.filtered"
+  : > "${filtered}"
+  for bin in "$@"; do
+    grep "  ${bin}\$" "${checksum_file}" >> "${filtered}" 2>/dev/null || \
+      grep " ${bin}\$" "${checksum_file}" >> "${filtered}" 2>/dev/null || \
+      err "no checksum found for ${bin}"
+  done
   if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum --check --ignore-missing "${checksum_file}"
+    sha256sum --check "${filtered}"
   elif command -v shasum >/dev/null 2>&1; then
-    shasum -a 256 --check --ignore-missing "${checksum_file}"
+    shasum -a 256 --check "${filtered}"
   else
     err "sha256sum or shasum is required for checksum verification"
   fi
@@ -95,9 +111,10 @@ action="install"
 
 for arg in "$@"; do
   case "${arg}" in
-    --help)      usage ;;
-    --uninstall) action="uninstall" ;;
-    *)           err "unknown option: ${arg}" ;;
+    --help)         usage ;;
+    --with-plugins) ALL_BINS="${CORE_BINS} ${PLUGIN_BINS}" ;;
+    --uninstall)    action="uninstall" ;;
+    *)              err "unknown option: ${arg}" ;;
   esac
 done
 
@@ -174,17 +191,20 @@ log "Downloading ${checksum_file}..."
 fetch_to "${DOWNLOAD_BASE}/${latest_tag}/${checksum_file}" "${tmpdir}/${checksum_file}"
 
 # Download all binaries
+downloaded_bins=""
 for bin in ${ALL_BINS}; do
   remote_name="${bin}-${suffix}"
   url="${DOWNLOAD_BASE}/${latest_tag}/${remote_name}"
   log "Downloading ${remote_name}..."
   fetch_to "${url}" "${tmpdir}/${remote_name}"
+  downloaded_bins="${downloaded_bins} ${remote_name}"
 done
 
 # --- Verify SHA256 checksums -------------------------------------------------
 
 log "Verifying checksums..."
-( cd "${tmpdir}" && verify_sha256 "${checksum_file}" )
+# shellcheck disable=SC2086
+( cd "${tmpdir}" && verify_sha256 "${checksum_file}" ${downloaded_bins} )
 log "Checksums OK."
 
 # --- Install ------------------------------------------------------------------
@@ -221,6 +241,10 @@ case ":${PATH}:" in
 esac
 
 # --- Next steps ---------------------------------------------------------------
+
+# NOTE: Previous versions auto-ran 'sigild init' after install.
+# This was removed to keep the installer non-interactive.
+# Users should run 'sigild init' manually to complete setup.
 
 log ""
 log "Run 'sigild init' to complete setup."
