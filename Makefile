@@ -8,7 +8,7 @@ CMDS    := ./cmd/sigild/ ./cmd/sigilctl/
 PLUGINS := $(wildcard ./plugins/sigil-plugin-*/)
 
 .PHONY: all fmt fmt-check vet lint staticcheck test test-race check build install run \
-        status generate coverage clean sync-assets hooks help
+        status generate coverage clean sync-assets hooks help vscode
 
 ## all: default target — build everything.
 all: build
@@ -101,6 +101,11 @@ run: build
 ## status: query the running daemon via sigilctl.
 status: build
 	$(BIN)/sigilctl status
+
+## vscode: rebuild the VS Code extension.
+vscode:
+	@cd extensions/vscode && npx tsc -p ./
+	@echo "VS Code extension compiled to extensions/vscode/out/"
 
 ## clean: remove build artifacts.
 clean:
