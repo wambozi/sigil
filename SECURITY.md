@@ -86,6 +86,8 @@ port    = 7773
 - All data is local-first. Nothing leaves the machine without explicit opt-in.
 - Unix socket IPC is the default; TCP listener requires opt-in configuration.
 - No root/sudo required. Runs as the current user.
-- Cloud API keys are read from environment variables, never persisted to disk
-  by the daemon.
+- Cloud API keys may be stored in the user's config file (`config.toml`,
+  mode 0600) by `sigilctl auth login`, or read from environment variables.
+  The daemon reads but never writes API keys. Users can clear stored keys
+  by editing `config.toml` directly.
 - Fleet telemetry is anonymized and aggregated before transmission.

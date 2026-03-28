@@ -541,3 +541,193 @@ func TestIsActuationsEnabled(t *testing.T) {
 		})
 	}
 }
+
+// --- CloudSyncConfig.IsEnabled ----------------------------------------------
+
+func TestCloudSyncIsEnabled(t *testing.T) {
+	trueVal := true
+	falseVal := false
+
+	tests := []struct {
+		name string
+		c    CloudSyncConfig
+		want bool
+	}{
+		{"nil pointer defaults to false", CloudSyncConfig{}, false},
+		{"explicit true", CloudSyncConfig{Enabled: &trueVal}, true},
+		{"explicit false", CloudSyncConfig{Enabled: &falseVal}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.c.IsEnabled(); got != tt.want {
+				t.Errorf("IsEnabled() = %v; want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// --- Cloud & CloudSync merge ------------------------------------------------
+
+func TestLoad_CloudConfig(t *testing.T) {
+	tests := []struct {
+		name  string
+		toml  string
+		check func(t *testing.T, cfg *Config)
+	}{
+		{
+			name: "cloud tier, api_key, org_id merge",
+			toml: `
+[cloud]
+tier = "team"
+api_key = "sk-sigil-abc123"
+org_id = "org-42"
+`,
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.Cloud.Tier != "team" {
+					t.Errorf("Cloud.Tier = %q; want team", cfg.Cloud.Tier)
+				}
+				if cfg.Cloud.APIKey != "sk-sigil-abc123" {
+					t.Errorf("Cloud.APIKey = %q", cfg.Cloud.APIKey)
+				}
+				if cfg.Cloud.OrgID != "org-42" {
+					t.Errorf("Cloud.OrgID = %q; want org-42", cfg.Cloud.OrgID)
+				}
+			},
+		},
+		{
+			name: "cloud fields absent keep defaults",
+			toml: `
+[daemon]
+log_level = "debug"
+`,
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.Cloud.Tier != "" {
+					t.Errorf("Cloud.Tier = %q; want empty", cfg.Cloud.Tier)
+				}
+				if cfg.Cloud.APIKey != "" {
+					t.Errorf("Cloud.APIKey = %q; want empty", cfg.Cloud.APIKey)
+				}
+				if cfg.Cloud.OrgID != "" {
+					t.Errorf("Cloud.OrgID = %q; want empty", cfg.Cloud.OrgID)
+				}
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "config.toml")
+			if err := os.WriteFile(path, []byte(tc.toml), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := Load(path)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			tc.check(t, cfg)
+		})
+	}
+}
+
+func TestLoad_CloudSyncConfig(t *testing.T) {
+	tests := []struct {
+		name  string
+		toml  string
+		check func(t *testing.T, cfg *Config)
+	}{
+		{
+			name: "cloud_sync enabled true overrides nil",
+			toml: `
+[cloud_sync]
+enabled = true
+`,
+			check: func(t *testing.T, cfg *Config) {
+				if !cfg.CloudSync.IsEnabled() {
+					t.Error("CloudSync.IsEnabled() = false; want true")
+				}
+			},
+		},
+		{
+			name: "cloud_sync enabled false overrides nil",
+			toml: `
+[cloud_sync]
+enabled = false
+`,
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.CloudSync.Enabled == nil {
+					t.Fatal("CloudSync.Enabled is nil; want non-nil false")
+				}
+				if cfg.CloudSync.IsEnabled() {
+					t.Error("CloudSync.IsEnabled() = true; want false")
+				}
+			},
+		},
+		{
+			name: "cloud_sync absent leaves enabled nil",
+			toml: `
+[daemon]
+log_level = "debug"
+`,
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.CloudSync.Enabled != nil {
+					t.Errorf("CloudSync.Enabled = %v; want nil", *cfg.CloudSync.Enabled)
+				}
+				if cfg.CloudSync.IsEnabled() {
+					t.Error("CloudSync.IsEnabled() = true; want false (nil defaults to false)")
+				}
+			},
+		},
+		{
+			name: "cloud_sync api_url, batch_size, poll_interval merge",
+			toml: `
+[cloud_sync]
+api_url = "https://custom.example.com/api/v1"
+batch_size = 50
+poll_interval = "30s"
+`,
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.CloudSync.APIURL != "https://custom.example.com/api/v1" {
+					t.Errorf("CloudSync.APIURL = %q", cfg.CloudSync.APIURL)
+				}
+				if cfg.CloudSync.BatchSize != 50 {
+					t.Errorf("CloudSync.BatchSize = %d; want 50", cfg.CloudSync.BatchSize)
+				}
+				if cfg.CloudSync.PollInterval != "30s" {
+					t.Errorf("CloudSync.PollInterval = %q; want 30s", cfg.CloudSync.PollInterval)
+				}
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "config.toml")
+			if err := os.WriteFile(path, []byte(tc.toml), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := Load(path)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			tc.check(t, cfg)
+		})
+	}
+}
+
+// --- Defaults populate fleet and cloud_sync URLs ----------------------------
+
+func TestDefaults_FleetEndpoint(t *testing.T) {
+	cfg := Defaults()
+	if cfg.Fleet.Endpoint != DefaultFleetEndpoint {
+		t.Errorf("Fleet.Endpoint = %q; want %q", cfg.Fleet.Endpoint, DefaultFleetEndpoint)
+	}
+}
+
+func TestDefaults_CloudSyncAPIURL(t *testing.T) {
+	cfg := Defaults()
+	if cfg.CloudSync.APIURL != DefaultCloudSyncURL {
+		t.Errorf("CloudSync.APIURL = %q; want %q", cfg.CloudSync.APIURL, DefaultCloudSyncURL)
+	}
+}

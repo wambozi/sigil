@@ -1,8 +1,8 @@
 {
   "name": "sigil-vscode",
   "displayName": "Sigil",
-  "description": "Surface sigild suggestions in VS Code",
-  "version": "0.1.0",
+  "description": "Sigil daemon panel — suggestions, status, and event viewer",
+  "version": "0.2.0",
   "publisher": "wambozi",
   "license": "MIT",
   "icon": "icon.png",
@@ -17,6 +17,24 @@
   "activationEvents": ["onStartupFinished"],
   "main": "./out/extension.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "sigil-sidebar",
+          "title": "Sigil",
+          "icon": "media/sigil-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "sigil-sidebar": [
+        {
+          "type": "webview",
+          "id": "sigil.panel",
+          "name": "Sigil"
+        }
+      ]
+    },
     "configuration": {
       "title": "Sigil",
       "properties": {
@@ -24,15 +42,25 @@
           "type": "string",
           "default": "",
           "description": "Path to sigild Unix socket. Auto-detected from $XDG_RUNTIME_DIR if empty."
+        },
+        "sigil.metricsRefreshInterval": {
+          "type": "number",
+          "default": 10000,
+          "minimum": 2000,
+          "description": "How often to poll daemon status and metrics (milliseconds)."
+        },
+        "sigil.suggestionDisplayMode": {
+          "type": "string",
+          "default": "timeline",
+          "enum": ["timeline", "active-list"],
+          "enumDescriptions": [
+            "Show all suggestions chronologically",
+            "Show only pending suggestions, sorted by confidence"
+          ],
+          "description": "How to display suggestions in the panel."
         }
       }
-    },
-    "commands": [
-      {
-        "command": "sigil.showSuggestions",
-        "title": "Sigil: Show Suggestions"
-      }
-    ]
+    }
   },
   "scripts": {
     "compile": "tsc -p ./",

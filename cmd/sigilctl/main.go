@@ -33,6 +33,8 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/pelletier/go-toml/v2"
+	"github.com/wambozi/sigil/internal/config"
 	"github.com/wambozi/sigil/internal/event"
 	"github.com/wambozi/sigil/internal/inference"
 	"github.com/wambozi/sigil/internal/plugin"
@@ -114,6 +116,8 @@ func run() error {
 		return cmdStop(*socketPath)
 	case "start":
 		return cmdStart(*socketPath)
+	case "auth":
+		return cmdAuth(*socketPath, args)
 	default:
 		return fmt.Errorf("unknown command %q — run sigilctl -help", cmd)
 	}
@@ -921,6 +925,130 @@ func cmdCredentialRevoke(socketPath string, args []string) error {
 	return nil
 }
 
+// cmdAuth dispatches auth subcommands: login, status, logout.
+func cmdAuth(socketPath string, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: sigilctl auth login|status|logout")
+	}
+	switch args[0] {
+	case "login":
+		return cmdAuthLogin()
+	case "status":
+		return cmdAuthStatus()
+	case "logout":
+		return cmdAuthLogout()
+	default:
+		return fmt.Errorf("unknown auth command: %s", args[0])
+	}
+}
+
+// cmdAuthLogin prompts for an API key and writes it to the config file.
+func cmdAuthLogin() error {
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print("Enter your Sigil API key: ")
+	key, readErr := reader.ReadString('\n')
+	if readErr != nil {
+		return fmt.Errorf("read API key: %w", readErr)
+	}
+	key = strings.TrimSpace(key)
+
+	if key == "" {
+		return fmt.Errorf("API key cannot be empty")
+	}
+	if !strings.HasPrefix(key, "sk-sigil-") {
+		return fmt.Errorf("invalid API key format: must start with \"sk-sigil-\"")
+	}
+
+	cfgPath := config.DefaultPath()
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		cfg = config.Defaults()
+	}
+
+	cfg.Cloud.APIKey = key
+
+	return writeConfig(cfgPath, cfg)
+}
+
+// cmdAuthStatus reads the config and displays tier, API key validity, and enabled features.
+func cmdAuthStatus() error {
+	cfgPath := config.DefaultPath()
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	tier := cfg.Cloud.Tier
+	if tier == "" {
+		tier = "free"
+	}
+	fmt.Printf("Tier:      %s\n", tier)
+
+	if cfg.Cloud.APIKey != "" {
+		key := cfg.Cloud.APIKey
+		if len(key) >= 13 {
+			fmt.Printf("API key:   %s...%s\n", key[:9], key[len(key)-4:])
+		} else {
+			fmt.Printf("API key:   (set, too short to display)\n")
+		}
+	} else {
+		fmt.Println("API key:   (not set)")
+	}
+
+	if cfg.Cloud.OrgID != "" {
+		fmt.Printf("Org ID:    %s\n", cfg.Cloud.OrgID)
+	}
+
+	fmt.Printf("Inference: %s\n", cfg.Inference.Mode)
+	fmt.Printf("Sync:      %t\n", cfg.CloudSync.IsEnabled())
+
+	return nil
+}
+
+// cmdAuthLogout removes the API key from the config file.
+func cmdAuthLogout() error {
+	cfgPath := config.DefaultPath()
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	if cfg.Cloud.APIKey == "" {
+		fmt.Println("No API key configured.")
+		return nil
+	}
+
+	cfg.Cloud.APIKey = ""
+
+	if err := writeConfig(cfgPath, cfg); err != nil {
+		return err
+	}
+	fmt.Println("API key removed.")
+	return nil
+}
+
+// writeConfig marshals cfg to TOML and writes it atomically to path
+// via a temp-file + rename pattern.
+func writeConfig(path string, cfg *config.Config) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("create config dir: %w", err)
+	}
+	data, err := toml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return fmt.Errorf("write temp config: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("rename config: %w", err)
+	}
+	fmt.Printf("Config written to %s\n", path)
+	return nil
+}
+
 func printUsage() {
 	fmt.Print(`sigilctl — Sigil OS daemon CLI
 
@@ -949,6 +1077,9 @@ Commands:
   fleet status                  Show fleet reporting opt-in status
   fleet preview                 Show what fleet data will be sent
   fleet opt-out                 Disable fleet reporting
+  auth login                    Authenticate with a Sigil cloud API key
+  auth status                   Show current tier and API key status
+  auth logout                   Remove API key from config
   credential add <name>         Generate a new remote-access credential
   credential list               List all credentials
   credential revoke <name>      Revoke a credential immediately
