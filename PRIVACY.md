@@ -157,6 +157,23 @@ the aggregated summary described above is sent.
 
 ---
 
+## Cloud LLM Proxy (Pro/Team tiers)
+
+When using the cloud LLM proxy service (`cloud/llm-proxy`), inference
+requests are forwarded to upstream providers (OpenAI or Anthropic). The
+proxy itself:
+
+- **Does not log or store** prompt content or response content
+- **Logs only metadata** for billing: tenant identifier, model name, HTTP
+  status code, and response latency
+- **Does not persist** any data beyond structured log output
+
+The same privacy guarantees described in "What the LLM receives" above
+apply: sigild sends only aggregated counts and pattern labels to the
+inference engine, not raw file paths or command strings.
+
+---
+
 ## Questions or concerns
 
 Open an issue at <https://github.com/wambozi/sigil/issues>.
