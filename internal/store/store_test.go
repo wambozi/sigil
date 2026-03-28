@@ -6,8 +6,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"path/filepath"
 	"testing"
 	"time"
@@ -2224,27 +2222,6 @@ func (w *errWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// limitWriter passes through up to limit bytes then returns an error.
-// Retained for potential future use in injection tests.
-type limitWriter struct {
-	w       io.Writer
-	written int
-	limit   int
-}
-
-func (lw *limitWriter) Write(p []byte) (int, error) {
-	if lw.written >= lw.limit {
-		return 0, fmt.Errorf("writer: limit reached")
-	}
-	remaining := lw.limit - lw.written
-	if len(p) > remaining {
-		p = p[:remaining]
-	}
-	n, err := lw.w.Write(p)
-	lw.written += n
-	return n, err
-}
-
 // errCountWriter counts encoded JSON objects (via newlines) and never errors.
 type errCountWriter struct {
 	encodes int
@@ -2259,4 +2236,271 @@ func (w *errCountWriter) Write(p []byte) (int, error) {
 		}
 	}
 	return len(p), nil
+}
+
+// --- Paginated Query + Delete Tests ----------------------------------------
+
+// seedEvents inserts n events of the given kind, returning the base timestamp.
+func seedEvents(t *testing.T, s *Store, kind event.Kind, n int) time.Time {
+	t.Helper()
+	ctx := context.Background()
+	base := time.Date(2026, 3, 25, 10, 0, 0, 0, time.UTC)
+	for i := 0; i < n; i++ {
+		e := event.Event{
+			Kind:      kind,
+			Source:    string(kind),
+			Payload:   map[string]any{"i": float64(i)},
+			Timestamp: base.Add(time.Duration(i) * time.Second),
+		}
+		require.NoError(t, s.InsertEvent(ctx, e))
+	}
+	return base
+}
+
+func TestQueryEventsPaginated(t *testing.T) {
+	s := openMemory(t)
+	ctx := context.Background()
+
+	// Seed: 10 file events, 5 terminal events.
+	fileBase := seedEvents(t, s, event.KindFile, 10)
+	seedEvents(t, s, event.KindTerminal, 5)
+
+	tests := []struct {
+		name      string
+		filter    EventFilter
+		wantN     int
+		wantTotal int
+	}{
+		{
+			name:      "no filter default limit",
+			filter:    EventFilter{},
+			wantN:     15,
+			wantTotal: 15,
+		},
+		{
+			name:      "filter by kind",
+			filter:    EventFilter{Kind: event.KindFile},
+			wantN:     10,
+			wantTotal: 10,
+		},
+		{
+			name:      "filter by kind terminal",
+			filter:    EventFilter{Kind: event.KindTerminal},
+			wantN:     5,
+			wantTotal: 5,
+		},
+		{
+			name:      "limit smaller than total",
+			filter:    EventFilter{Limit: 3},
+			wantN:     3,
+			wantTotal: 15,
+		},
+		{
+			name:      "offset skips rows",
+			filter:    EventFilter{Limit: 5, Offset: 10},
+			wantN:     5,
+			wantTotal: 15,
+		},
+		{
+			name:      "offset past end",
+			filter:    EventFilter{Limit: 5, Offset: 100},
+			wantN:     0,
+			wantTotal: 15,
+		},
+		{
+			name: "time range filter",
+			filter: EventFilter{
+				Kind:  event.KindFile,
+				After: fileBase.Add(5 * time.Second).UnixMilli(),
+			},
+			wantN:     5, // events 5,6,7,8,9
+			wantTotal: 5,
+		},
+		{
+			name: "time range before",
+			filter: EventFilter{
+				Kind:   event.KindFile,
+				Before: fileBase.Add(3 * time.Second).UnixMilli(),
+			},
+			wantN:     3, // events 0,1,2
+			wantTotal: 3,
+		},
+		{
+			name:      "nonexistent kind",
+			filter:    EventFilter{Kind: event.KindGit},
+			wantN:     0,
+			wantTotal: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			events, total, err := s.QueryEventsPaginated(ctx, tt.filter)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantTotal, total, "total count mismatch")
+			assert.Len(t, events, tt.wantN, "result count mismatch")
+			// Verify descending timestamp order.
+			for i := 1; i < len(events); i++ {
+				assert.True(t, !events[i].Timestamp.After(events[i-1].Timestamp),
+					"events should be in descending timestamp order")
+			}
+		})
+	}
+}
+
+func TestQueryEventsPaginated_emptyStore(t *testing.T) {
+	s := openMemory(t)
+	ctx := context.Background()
+	events, total, err := s.QueryEventsPaginated(ctx, EventFilter{})
+	require.NoError(t, err)
+	assert.Equal(t, 0, total)
+	assert.Empty(t, events)
+	assert.NotNil(t, events) // must return empty slice, never nil
+}
+
+func TestQueryEventsPaginated_limitsMax500(t *testing.T) {
+	s := openMemory(t)
+	ctx := context.Background()
+	seedEvents(t, s, event.KindFile, 5)
+
+	// Request limit > 500 — should be capped.
+	events, _, err := s.QueryEventsPaginated(ctx, EventFilter{Limit: 1000})
+	require.NoError(t, err)
+	assert.Len(t, events, 5) // only 5 exist, but limit was capped to 500
+}
+
+func TestQueryEventByID(t *testing.T) {
+	s := openMemory(t)
+	ctx := context.Background()
+
+	e := event.Event{
+		Kind:      event.KindTerminal,
+		Source:    "terminal",
+		Payload:   map[string]any{"cmd": "make build", "cwd": "/home/nick"},
+		Timestamp: time.Now().Truncate(time.Millisecond),
+	}
+	require.NoError(t, s.InsertEvent(ctx, e))
+
+	// Get the inserted ID.
+	all, err := s.QueryEvents(ctx, "", 1)
+	require.NoError(t, err)
+	require.Len(t, all, 1)
+
+	got, err := s.QueryEventByID(ctx, all[0].ID)
+	require.NoError(t, err)
+	assert.Equal(t, all[0].ID, got.ID)
+	assert.Equal(t, event.KindTerminal, got.Kind)
+	assert.Equal(t, "make build", got.Payload["cmd"])
+}
+
+func TestQueryEventByID_notFound(t *testing.T) {
+	s := openMemory(t)
+	ctx := context.Background()
+
+	_, err := s.QueryEventByID(ctx, 99999)
+	assert.True(t, errors.Is(err, sql.ErrNoRows) || err != nil, "should error for nonexistent ID")
+}
+
+func TestDeleteEvents(t *testing.T) {
+	s := openMemory(t)
+	ctx := context.Background()
+	seedEvents(t, s, event.KindFile, 5)
+
+	all, err := s.QueryEvents(ctx, "", 100)
+	require.NoError(t, err)
+	require.Len(t, all, 5)
+
+	// Delete 2 specific events.
+	ids := []int64{all[0].ID, all[1].ID}
+	n, err := s.DeleteEvents(ctx, ids)
+	require.NoError(t, err)
+	assert.Equal(t, 2, n)
+
+	// Verify remaining.
+	remaining, err := s.QueryEvents(ctx, "", 100)
+	require.NoError(t, err)
+	assert.Len(t, remaining, 3)
+}
+
+func TestDeleteEvents_empty(t *testing.T) {
+	s := openMemory(t)
+	ctx := context.Background()
+	n, err := s.DeleteEvents(ctx, nil)
+	require.NoError(t, err)
+	assert.Equal(t, 0, n)
+}
+
+func TestDeleteEvents_nonexistentIDs(t *testing.T) {
+	s := openMemory(t)
+	ctx := context.Background()
+	seedEvents(t, s, event.KindFile, 3)
+
+	n, err := s.DeleteEvents(ctx, []int64{99999, 99998})
+	require.NoError(t, err)
+	assert.Equal(t, 0, n)
+
+	// All original events remain.
+	remaining, err := s.QueryEvents(ctx, "", 100)
+	require.NoError(t, err)
+	assert.Len(t, remaining, 3)
+}
+
+func TestDeleteEventsFiltered(t *testing.T) {
+	s := openMemory(t)
+	ctx := context.Background()
+	base := seedEvents(t, s, event.KindFile, 5)
+	seedEvents(t, s, event.KindTerminal, 3)
+
+	tests := []struct {
+		name          string
+		filter        EventFilter
+		wantDeleted   int
+		wantRemaining int
+	}{
+		{
+			name:          "delete by kind",
+			filter:        EventFilter{Kind: event.KindTerminal},
+			wantDeleted:   3,
+			wantRemaining: 5,
+		},
+		{
+			name:          "delete by time range",
+			filter:        EventFilter{Kind: event.KindFile, Before: base.Add(2 * time.Second).UnixMilli()},
+			wantDeleted:   2, // file events at base+0s, base+1s
+			wantRemaining: 6, // 3 file + 3 terminal remain
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Re-seed for each subtest.
+			s := openMemory(t)
+			seedEvents(t, s, event.KindFile, 5)
+			seedEvents(t, s, event.KindTerminal, 3)
+
+			n, err := s.DeleteEventsFiltered(ctx, tt.filter)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantDeleted, n)
+
+			remaining, _, err := s.QueryEventsPaginated(ctx, EventFilter{})
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantRemaining, len(remaining))
+		})
+	}
+}
+
+func TestDeleteEventsFiltered_emptyFilter(t *testing.T) {
+	s := openMemory(t)
+	ctx := context.Background()
+	seedEvents(t, s, event.KindFile, 5)
+
+	// Empty filter matches all — deletes everything.
+	n, err := s.DeleteEventsFiltered(ctx, EventFilter{})
+	require.NoError(t, err)
+	assert.Equal(t, 5, n)
+
+	remaining, total, err := s.QueryEventsPaginated(ctx, EventFilter{})
+	require.NoError(t, err)
+	assert.Equal(t, 0, total)
+	assert.Empty(t, remaining)
 }

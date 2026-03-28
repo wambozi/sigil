@@ -2,8 +2,13 @@
 
 package main
 
-import "github.com/wambozi/sigil/internal/collector"
+import (
+	"github.com/wambozi/sigil/internal/collector"
+	"github.com/wambozi/sigil/internal/collector/sources"
+)
 
-// addPlatformSources is a no-op on Linux and other platforms.
+// addPlatformSources registers Linux-specific collector sources.
 // HyprlandSource (registered unconditionally) handles Linux window focus.
-func addPlatformSources(_ *collector.Collector) {}
+func addPlatformSources(col *collector.Collector) {
+	col.Add(&sources.ClipboardSource{})
+}

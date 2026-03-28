@@ -1168,10 +1168,6 @@ func main() {
 }
 `
 
-const stubGoInstallSrc = `package main
-func main() {}
-`
-
 // stubBrewSrc is a shell script that behaves like a minimal brew stub.
 // We use a compiled Go binary instead to keep the test portable.
 const stubBrewSrc = `package main

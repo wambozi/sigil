@@ -10,4 +10,5 @@ import (
 // addPlatformSources registers macOS-specific collector sources.
 func addPlatformSources(col *collector.Collector) {
 	col.Add(&sources.DarwinFocusSource{})
+	col.Add(&sources.ClipboardSource{})
 }
