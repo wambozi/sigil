@@ -1,0 +1,373 @@
+package main
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"net"
+	"os"
+	"path/filepath"
+	goruntime "runtime"
+	"sync"
+	"time"
+
+	"github.com/wambozi/sigil/internal/socket"
+	wailsrt "github.com/wailsapp/wails/v2/pkg/runtime"
+)
+
+// App is the Wails-bound backend. It communicates with sigild over the Unix
+// domain socket using the same newline-delimited JSON protocol as sigilctl and
+// the VS Code extension. Short-lived connections are used for RPC calls; a
+// persistent connection handles push subscriptions.
+type App struct {
+	ctx        context.Context
+	socketPath string
+	connected  bool
+	mu         sync.RWMutex
+
+	// Persistent subscription connection.
+	subConn   net.Conn
+	subCancel context.CancelFunc
+
+	notifier Notifier
+	log      *slog.Logger
+}
+
+// NewApp returns an App with sensible defaults. Wails will call startup() and
+// shutdown() at the appropriate lifecycle points.
+func NewApp() *App {
+	return &App{
+		log: slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})),
+	}
+}
+
+// startup is called by Wails when the application starts. It discovers the
+// socket path, initialises the notifier, and starts the subscription goroutine.
+func (a *App) startup(ctx context.Context) {
+	a.ctx = ctx
+	a.socketPath = defaultSocketPath()
+	a.notifier = newNotifier()
+	a.log.Info("sigil-app starting", "socket", a.socketPath)
+
+	subCtx, cancel := context.WithCancel(ctx)
+	a.subCancel = cancel
+	go a.startSubscription(subCtx)
+
+	go setupTray(a)
+}
+
+// shutdown is called by Wails when the application is shutting down.
+func (a *App) shutdown(ctx context.Context) {
+	if a.subCancel != nil {
+		a.subCancel()
+	}
+	a.mu.Lock()
+	if a.subConn != nil {
+		a.subConn.Close()
+	}
+	a.mu.Unlock()
+	if a.notifier != nil {
+		a.notifier.Close()
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Socket RPC — adapted from cmd/sigilctl/main.go:469
+// ---------------------------------------------------------------------------
+
+// call sends a single JSON-over-Unix-socket RPC request to sigild and returns
+// the response. Each call opens a new short-lived connection (same pattern as
+// sigilctl).
+func (a *App) call(method string, payload any) (socket.Response, error) {
+	conn, err := net.Dial("unix", a.socketPath)
+	if err != nil {
+		return socket.Response{}, fmt.Errorf("connect to daemon at %s: %w", a.socketPath, err)
+	}
+	defer conn.Close()
+
+	req := socket.Request{Method: method}
+	if payload != nil {
+		req.Payload, _ = json.Marshal(payload)
+	}
+
+	if err := json.NewEncoder(conn).Encode(req); err != nil {
+		return socket.Response{}, fmt.Errorf("send request: %w", err)
+	}
+
+	var resp socket.Response
+	if err := json.NewDecoder(bufio.NewReader(conn)).Decode(&resp); err != nil {
+		return socket.Response{}, fmt.Errorf("read response: %w", err)
+	}
+	return resp, nil
+}
+
+// ---------------------------------------------------------------------------
+// Socket path discovery — adapted from cmd/sigilctl/main.go:539
+// ---------------------------------------------------------------------------
+
+func defaultSocketPath() string {
+	switch goruntime.GOOS {
+	case "windows":
+		localApp := os.Getenv("LOCALAPPDATA")
+		if localApp == "" {
+			localApp = filepath.Join(os.Getenv("USERPROFILE"), "AppData", "Local")
+		}
+		return filepath.Join(localApp, "sigil", "sigild.sock")
+	case "darwin":
+		return filepath.Join(os.TempDir(), "sigild.sock")
+	default: // linux and others
+		if dir := os.Getenv("XDG_RUNTIME_DIR"); dir != "" {
+			return filepath.Join(dir, "sigild.sock")
+		}
+		return fmt.Sprintf("/run/user/%d/sigild.sock", os.Getuid())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Push subscription with exponential backoff
+// ---------------------------------------------------------------------------
+
+// startSubscription maintains a persistent connection to sigild, subscribing
+// to the "suggestions" topic. On disconnect it reconnects with exponential
+// backoff (1 s initial, doubling, capped at 30 s, reset on success).
+func (a *App) startSubscription(ctx context.Context) {
+	delay := time.Second
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		conn, err := net.Dial("unix", a.socketPath)
+		if err != nil {
+			a.setConnected(false)
+			a.log.Debug("subscription connect failed, backing off", "delay", delay, "err", err)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(delay):
+			}
+			delay = min(delay*2, 30*time.Second)
+			continue
+		}
+
+		// Connection succeeded — reset backoff.
+		delay = time.Second
+		a.mu.Lock()
+		a.subConn = conn
+		a.mu.Unlock()
+		a.setConnected(true)
+
+		// Send subscribe request.
+		req := socket.Request{Method: "subscribe"}
+		req.Payload, _ = json.Marshal(map[string]string{"topic": "suggestions"})
+		if err := json.NewEncoder(conn).Encode(req); err != nil {
+			a.log.Warn("subscription write failed", "err", err)
+			conn.Close()
+			a.setConnected(false)
+			continue
+		}
+
+		// Read push events until disconnect.
+		scanner := bufio.NewScanner(conn)
+		for scanner.Scan() {
+			select {
+			case <-ctx.Done():
+				conn.Close()
+				return
+			default:
+			}
+			a.handlePushLine(scanner.Text())
+		}
+
+		conn.Close()
+		a.setConnected(false)
+		a.log.Info("subscription disconnected, will reconnect")
+	}
+}
+
+// handlePushLine parses a single newline-delimited JSON push event and emits
+// Wails events to the frontend.
+func (a *App) handlePushLine(line string) {
+	var push struct {
+		Event   string          `json:"event"`
+		Payload json.RawMessage `json:"payload,omitempty"`
+		OK      bool            `json:"ok,omitempty"`
+	}
+	if err := json.Unmarshal([]byte(line), &push); err != nil {
+		return
+	}
+
+	// Ignore subscription acknowledgement (has "ok" but no "event").
+	if push.Event == "" {
+		return
+	}
+
+	if push.Event == "suggestions" {
+		var sg map[string]any
+		if err := json.Unmarshal(push.Payload, &sg); err == nil {
+			wailsrt.EventsEmit(a.ctx, "suggestion:new", sg)
+
+			title, _ := sg["title"].(string)
+			body, _ := sg["text"].(string)
+			if body == "" {
+				body, _ = sg["body"].(string)
+			}
+			idFloat, _ := sg["id"].(float64)
+			if title != "" {
+				_ = a.notifier.Show(title, body, "", int64(idFloat))
+			}
+		}
+	}
+}
+
+// setConnected updates the connection state and emits a Wails event.
+func (a *App) setConnected(c bool) {
+	a.mu.Lock()
+	changed := a.connected != c
+	a.connected = c
+	a.mu.Unlock()
+
+	if changed && a.ctx != nil {
+		wailsrt.EventsEmit(a.ctx, "connection:changed", c)
+		updateTrayStatus(c)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Wails-bound methods (exported, called from frontend JS)
+// ---------------------------------------------------------------------------
+
+// GetStatus returns the daemon status.
+func (a *App) GetStatus() (map[string]any, error) {
+	resp, err := a.call("status", nil)
+	if err != nil {
+		return nil, err
+	}
+	if !resp.OK {
+		return nil, fmt.Errorf("daemon error: %s", resp.Error)
+	}
+	var result map[string]any
+	if err := json.Unmarshal(resp.Payload, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// GetSuggestions returns recent suggestions from the daemon.
+func (a *App) GetSuggestions() ([]map[string]any, error) {
+	resp, err := a.call("suggestions", nil)
+	if err != nil {
+		return nil, err
+	}
+	if !resp.OK {
+		return nil, fmt.Errorf("daemon error: %s", resp.Error)
+	}
+	var result []map[string]any
+	if err := json.Unmarshal(resp.Payload, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// AcceptSuggestion sends acceptance feedback for a suggestion.
+func (a *App) AcceptSuggestion(id int) error {
+	resp, err := a.call("feedback", map[string]any{
+		"suggestion_id": id,
+		"outcome":       "accepted",
+	})
+	if err != nil {
+		return err
+	}
+	if !resp.OK {
+		return fmt.Errorf("daemon error: %s", resp.Error)
+	}
+	return nil
+}
+
+// DismissSuggestion sends dismissal feedback for a suggestion.
+func (a *App) DismissSuggestion(id int) error {
+	resp, err := a.call("feedback", map[string]any{
+		"suggestion_id": id,
+		"outcome":       "dismissed",
+	})
+	if err != nil {
+		return err
+	}
+	if !resp.OK {
+		return fmt.Errorf("daemon error: %s", resp.Error)
+	}
+	return nil
+}
+
+// SetLevel changes the daemon's notification level (0-4).
+func (a *App) SetLevel(n int) error {
+	resp, err := a.call("set-level", map[string]any{"level": n})
+	if err != nil {
+		return err
+	}
+	if !resp.OK {
+		return fmt.Errorf("daemon error: %s", resp.Error)
+	}
+	return nil
+}
+
+// GetDaySummary returns today's work breakdown from the daemon.
+func (a *App) GetDaySummary() (map[string]any, error) {
+	resp, err := a.call("day-summary", nil)
+	if err != nil {
+		return nil, err
+	}
+	if !resp.OK {
+		return nil, fmt.Errorf("daemon error: %s", resp.Error)
+	}
+	var result map[string]any
+	if err := json.Unmarshal(resp.Payload, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// Ask sends a free-text query to the daemon's inference engine.
+func (a *App) Ask(query string) (map[string]any, error) {
+	resp, err := a.call("ai-query", map[string]any{"query": query})
+	if err != nil {
+		return nil, err
+	}
+	if !resp.OK {
+		return nil, fmt.Errorf("daemon error: %s", resp.Error)
+	}
+	var result map[string]any
+	if err := json.Unmarshal(resp.Payload, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// GetCurrentTask returns the inferred current task context.
+func (a *App) GetCurrentTask() (map[string]any, error) {
+	resp, err := a.call("task", nil)
+	if err != nil {
+		return nil, err
+	}
+	if !resp.OK {
+		return nil, fmt.Errorf("daemon error: %s", resp.Error)
+	}
+	var result map[string]any
+	if err := json.Unmarshal(resp.Payload, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// IsConnected returns whether the app has an active subscription connection to
+// the daemon.
+func (a *App) IsConnected() bool {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.connected
+}

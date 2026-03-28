@@ -7,7 +7,7 @@ COV_MIN := 50
 CMDS    := ./cmd/sigild/ ./cmd/sigilctl/
 PLUGINS := $(wildcard ./plugins/sigil-plugin-*/)
 
-.PHONY: all fmt fmt-check vet lint staticcheck test test-race check build install run \
+.PHONY: all fmt fmt-check vet lint staticcheck test test-race check build build-app install run \
         status generate coverage clean sync-assets hooks help
 
 ## all: default target — build everything.
@@ -68,6 +68,10 @@ sync-assets:
 	@cp scripts/shell-hook.zsh  internal/assets/scripts/shell-hook.zsh
 	@cp scripts/shell-hook.bash internal/assets/scripts/shell-hook.bash
 	@cp deploy/sigild.service   internal/assets/deploy/sigild.service
+
+## build-app: compile sigil-app (requires Wails CLI and Node.js).
+build-app:
+	@cd cmd/sigil-app && wails build -o ../../$(BIN)/sigil-app
 
 ## install: build and install all binaries to $GOPATH/bin.
 install: sync-assets
