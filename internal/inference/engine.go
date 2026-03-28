@@ -253,6 +253,38 @@ type Stoppable interface {
 	Stop() error
 }
 
+// localInfoProvider is satisfied by *LocalBackend for extracting process info.
+type localInfoProvider interface {
+	ProcessInfo() (pid int, managed bool, ok bool)
+	ModelName() string
+	CtxSize() int
+}
+
+// LocalProcessInfo returns llama-server process info if a local backend is configured.
+// ok is false if no local backend exists or no process is running.
+func (e *Engine) LocalProcessInfo() (pid int, managed bool, ok bool) {
+	if p, yes := e.local.(localInfoProvider); yes {
+		return p.ProcessInfo()
+	}
+	return 0, false, false
+}
+
+// LocalModelName returns the configured local model name, or empty string.
+func (e *Engine) LocalModelName() string {
+	if p, ok := e.local.(localInfoProvider); ok {
+		return p.ModelName()
+	}
+	return ""
+}
+
+// LocalCtxSize returns the configured context window size, or 0 if no local backend.
+func (e *Engine) LocalCtxSize() int {
+	if p, ok := e.local.(localInfoProvider); ok {
+		return p.CtxSize()
+	}
+	return 0
+}
+
 // Close releases resources held by the engine. If the local backend is a
 // managed subprocess, it is stopped.
 func (e *Engine) Close() error {

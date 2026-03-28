@@ -149,24 +149,24 @@ type shellDef struct {
 	DetectPaths []string // absolute paths to check for shell binary
 }
 
-var shellRegistry = []shellDef{
-	{
-		Name:        "zsh",
-		Binary:      "zsh",
-		RCFiles:     []string{".zshrc"},
-		HookScript:  "shell-hook.zsh",
-		SourceLine:  `source "$HOME/.config/sigil/shell-hook.zsh"`,
-		DetectPaths: []string{"/bin/zsh", "/usr/bin/zsh", "/usr/local/bin/zsh", "/opt/homebrew/bin/zsh"},
-	},
-	{
-		Name:        "bash",
-		Binary:      "bash",
-		RCFiles:     []string{".bashrc"},
-		HookScript:  "shell-hook.bash",
-		SourceLine:  `source "$HOME/.config/sigil/shell-hook.bash"`,
-		DetectPaths: []string{"/bin/bash", "/usr/bin/bash", "/usr/local/bin/bash", "/opt/homebrew/bin/bash"},
-	},
-}
+	var rcFile, hookFile, sourceLine string
+	switch {
+	case strings.Contains(shell, "zsh"):
+		rcFile = filepath.Join(home, ".zshrc")
+		hookFile = "shell-hook.zsh"
+		sourceLine = `source "$HOME/.config/sigil/shell-hook.zsh"`
+	case strings.Contains(shell, "bash"):
+		rcFile = filepath.Join(home, ".bashrc")
+		hookFile = "shell-hook.bash"
+		sourceLine = `source "$HOME/.config/sigil/shell-hook.bash"`
+	case strings.Contains(shell, "fish"):
+		rcFile = filepath.Join(home, ".config", "fish", "config.fish")
+		hookFile = "shell-hook.fish"
+		sourceLine = `source $HOME/.config/sigil/shell-hook.fish`
+	default:
+		fmt.Println("  [skip] shell hook: unrecognised SHELL, install manually")
+		return nil
+	}
 
 // detectShells probes the system for installed shells.
 // It prioritises the user's $SHELL, then checks DetectPaths for remaining entries.
@@ -199,8 +199,12 @@ func detectShells(registry []shellDef) []shellDef {
 	return found
 }
 
-// writeSourceLine appends the shell hook source line to an RC file.
-func writeSourceLine(rcFile, sourceLine string) error {
+	// Ensure parent dir exists (no-op for bash/zsh, needed for fish's ~/.config/fish/).
+	if err := os.MkdirAll(filepath.Dir(rcFile), 0o755); err != nil {
+		return fmt.Errorf("mkdir %s: %w", filepath.Dir(rcFile), err)
+	}
+
+	// Append source line.
 	f, err := os.OpenFile(rcFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return fmt.Errorf("open %s: %w", rcFile, err)

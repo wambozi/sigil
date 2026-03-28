@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/wambozi/sigil/internal/event"
@@ -22,10 +23,21 @@ type Store struct {
 	db *sql.DB
 }
 
+// EventFilter specifies pagination and filtering criteria for event queries.
+type EventFilter struct {
+	Kind   event.Kind // optional; zero value = all kinds
+	After  int64      // UnixMilli; 0 = no lower bound
+	Before int64      // UnixMilli; 0 = no upper bound
+	Limit  int        // default 100, max 500
+	Offset int        // default 0
+}
+
 // EventReader is the read-only subset of Store used by the analyzer, fleet
 // reporter, and pattern detectors.
 type EventReader interface {
 	QueryEvents(ctx context.Context, kind event.Kind, n int) ([]event.Event, error)
+	QueryEventsPaginated(ctx context.Context, filter EventFilter) ([]event.Event, int, error)
+	QueryEventByID(ctx context.Context, id int64) (event.Event, error)
 	CountEvents(ctx context.Context, kind event.Kind, since time.Time) (int64, error)
 	QueryTopFiles(ctx context.Context, since time.Time, n int) ([]FileEditCount, error)
 	QueryTerminalEvents(ctx context.Context, since time.Time) ([]event.Event, error)
@@ -62,6 +74,8 @@ type EventWriter interface {
 	UpdateTask(ctx context.Context, t TaskRecord) error
 	InsertMLEvent(ctx context.Context, kind, endpoint, routing string, latencyMS int64) error
 	InsertPrediction(ctx context.Context, model, result string, confidence float64, expiresAt *time.Time) error
+	DeleteEvents(ctx context.Context, ids []int64) (int, error)
+	DeleteEventsFiltered(ctx context.Context, filter EventFilter) (int, error)
 }
 
 // ReadWriter combines EventReader and EventWriter for components that need both.
@@ -188,6 +202,130 @@ func (s *Store) QueryEvents(ctx context.Context, kind event.Kind, n int) ([]even
 		events = append(events, e)
 	}
 	return events, rows.Err()
+}
+
+// QueryEventsPaginated returns events matching the filter with pagination.
+// It returns the matching events, the total count of matching events, and any error.
+func (s *Store) QueryEventsPaginated(ctx context.Context, filter EventFilter) ([]event.Event, int, error) {
+	if filter.Limit <= 0 {
+		filter.Limit = 100
+	}
+	if filter.Limit > 500 {
+		filter.Limit = 500
+	}
+
+	where, args := buildEventWhere(filter)
+
+	// Count total matching rows.
+	var total int
+	countSQL := "SELECT COUNT(*) FROM events" + where
+	if err := s.db.QueryRowContext(ctx, countSQL, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("store: count paginated events: %w", err)
+	}
+
+	// Fetch the page.
+	querySQL := "SELECT id, kind, source, payload, ts FROM events" + where + " ORDER BY ts DESC LIMIT ? OFFSET ?"
+	pageArgs := append(args, filter.Limit, filter.Offset)
+	rows, err := s.db.QueryContext(ctx, querySQL, pageArgs...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("store: query paginated events: %w", err)
+	}
+	defer rows.Close()
+
+	events := make([]event.Event, 0)
+	for rows.Next() {
+		var (
+			e       event.Event
+			payload string
+			tsMS    int64
+		)
+		if err := rows.Scan(&e.ID, (*string)(&e.Kind), &e.Source, &payload, &tsMS); err != nil {
+			return nil, 0, err
+		}
+		if err := json.Unmarshal([]byte(payload), &e.Payload); err != nil {
+			return nil, 0, err
+		}
+		e.Timestamp = time.UnixMilli(tsMS)
+		events = append(events, e)
+	}
+	return events, total, rows.Err()
+}
+
+// QueryEventByID returns a single event by its ID with full payload.
+func (s *Store) QueryEventByID(ctx context.Context, id int64) (event.Event, error) {
+	var (
+		e       event.Event
+		payload string
+		tsMS    int64
+	)
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id, kind, source, payload, ts FROM events WHERE id = ?`, id,
+	).Scan(&e.ID, (*string)(&e.Kind), &e.Source, &payload, &tsMS)
+	if err != nil {
+		return event.Event{}, fmt.Errorf("store: query event by id: %w", err)
+	}
+	if err := json.Unmarshal([]byte(payload), &e.Payload); err != nil {
+		return event.Event{}, fmt.Errorf("store: unmarshal event payload: %w", err)
+	}
+	e.Timestamp = time.UnixMilli(tsMS)
+	return e, nil
+}
+
+// DeleteEvents removes specific events by ID. Returns the count of deleted rows.
+func (s *Store) DeleteEvents(ctx context.Context, ids []int64) (int, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	placeholders := strings.Repeat("?,", len(ids))
+	placeholders = placeholders[:len(placeholders)-1] // trim trailing comma
+
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+
+	res, err := s.db.ExecContext(ctx,
+		"DELETE FROM events WHERE id IN ("+placeholders+")", args...)
+	if err != nil {
+		return 0, fmt.Errorf("store: delete events by id: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
+// DeleteEventsFiltered removes events matching filter criteria. Returns the count deleted.
+func (s *Store) DeleteEventsFiltered(ctx context.Context, filter EventFilter) (int, error) {
+	where, args := buildEventWhere(filter)
+	res, err := s.db.ExecContext(ctx, "DELETE FROM events"+where, args...)
+	if err != nil {
+		return 0, fmt.Errorf("store: delete events filtered: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
+// buildEventWhere constructs a SQL WHERE clause and args from an EventFilter.
+func buildEventWhere(filter EventFilter) (string, []any) {
+	var conditions []string
+	var args []any
+
+	if filter.Kind != "" {
+		conditions = append(conditions, "kind = ?")
+		args = append(args, string(filter.Kind))
+	}
+	if filter.After > 0 {
+		conditions = append(conditions, "ts >= ?")
+		args = append(args, filter.After)
+	}
+	if filter.Before > 0 {
+		conditions = append(conditions, "ts < ?")
+		args = append(args, filter.Before)
+	}
+
+	if len(conditions) == 0 {
+		return "", nil
+	}
+	return " WHERE " + strings.Join(conditions, " AND "), args
 }
 
 // CountEvents returns the total number of stored events, optionally filtered

@@ -8,7 +8,7 @@ CMDS    := ./cmd/sigild/ ./cmd/sigilctl/
 PLUGINS := $(wildcard ./plugins/sigil-plugin-*/)
 
 .PHONY: all fmt fmt-check vet lint staticcheck test test-race check build install run \
-        status generate coverage clean sync-assets hooks help
+        status generate coverage clean sync-assets hooks help vscode
 
 ## all: default target — build everything.
 all: build
@@ -67,6 +67,7 @@ $(BIN):
 sync-assets:
 	@cp scripts/shell-hook.zsh  internal/assets/scripts/shell-hook.zsh
 	@cp scripts/shell-hook.bash internal/assets/scripts/shell-hook.bash
+	@cp scripts/shell-hook.fish internal/assets/scripts/shell-hook.fish
 	@cp deploy/sigild.service   internal/assets/deploy/sigild.service
 
 ## install: build and install all binaries to $GOPATH/bin.
@@ -101,6 +102,11 @@ run: build
 ## status: query the running daemon via sigilctl.
 status: build
 	$(BIN)/sigilctl status
+
+## vscode: rebuild the VS Code extension.
+vscode:
+	@cd extensions/vscode && npx tsc -p ./
+	@echo "VS Code extension compiled to extensions/vscode/out/"
 
 ## clean: remove build artifacts.
 clean:

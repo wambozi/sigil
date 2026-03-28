@@ -12,6 +12,12 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
+// DefaultFleetEndpoint is the canonical fleet reporting URL.
+const DefaultFleetEndpoint = "https://fleet.sigil.dev/api/v1"
+
+// DefaultCloudSyncURL is the canonical cloud sync ingest URL.
+const DefaultCloudSyncURL = "https://ingest.sigil.cloud/api/v1"
+
 // Config holds every tunable parameter for sigild.
 // Zero values mean "use the built-in default" so callers can detect which
 // fields were actually set by the file.
@@ -25,6 +31,8 @@ type Config struct {
 	Schedule  ScheduleConfig          `toml:"schedule"`
 	Fleet     FleetConfig             `toml:"fleet"`
 	Network   NetworkConfig           `toml:"network"`
+	Cloud     CloudConfig             `toml:"cloud"`
+	CloudSync CloudSyncConfig         `toml:"cloud_sync"`
 }
 
 // PluginConfig defines a single plugin's configuration.
@@ -57,6 +65,29 @@ type MLCloudConfig struct {
 	Enabled bool   `toml:"enabled"`
 	BaseURL string `toml:"base_url"`
 	APIKey  string `toml:"api_key"`
+}
+
+// CloudConfig holds cloud tier and authentication settings.
+type CloudConfig struct {
+	Tier   string `toml:"tier"` // "free", "pro", "team"
+	APIKey string `toml:"api_key"`
+	OrgID  string `toml:"org_id"` // Team tier only
+}
+
+// CloudSyncConfig controls the sync agent behavior.
+type CloudSyncConfig struct {
+	Enabled      *bool  `toml:"enabled"`
+	APIURL       string `toml:"api_url"`
+	BatchSize    int    `toml:"batch_size"`
+	PollInterval string `toml:"poll_interval"` // duration string, e.g. "60s"
+}
+
+// IsEnabled returns whether cloud sync is enabled (defaults to false if unset).
+func (c CloudSyncConfig) IsEnabled() bool {
+	if c.Enabled == nil {
+		return false
+	}
+	return *c.Enabled
 }
 
 // NetworkConfig controls the optional TCP listener.
@@ -161,6 +192,12 @@ func Defaults() *Config {
 		},
 		Retention: RetentionConfig{
 			RawEventDays: 90,
+		},
+		Fleet: FleetConfig{
+			Endpoint: DefaultFleetEndpoint,
+		},
+		CloudSync: CloudSyncConfig{
+			APIURL: DefaultCloudSyncURL,
 		},
 	}
 }
@@ -346,6 +383,31 @@ func merge(dst, src *Config) {
 	}
 	if src.ML.Cloud.APIKey != "" {
 		dst.ML.Cloud.APIKey = src.ML.Cloud.APIKey
+	}
+
+	// Cloud tier
+	if src.Cloud.Tier != "" {
+		dst.Cloud.Tier = src.Cloud.Tier
+	}
+	if src.Cloud.APIKey != "" {
+		dst.Cloud.APIKey = src.Cloud.APIKey
+	}
+	if src.Cloud.OrgID != "" {
+		dst.Cloud.OrgID = src.Cloud.OrgID
+	}
+
+	// Cloud sync
+	if src.CloudSync.Enabled != nil {
+		dst.CloudSync.Enabled = src.CloudSync.Enabled
+	}
+	if src.CloudSync.APIURL != "" {
+		dst.CloudSync.APIURL = src.CloudSync.APIURL
+	}
+	if src.CloudSync.BatchSize != 0 {
+		dst.CloudSync.BatchSize = src.CloudSync.BatchSize
+	}
+	if src.CloudSync.PollInterval != "" {
+		dst.CloudSync.PollInterval = src.CloudSync.PollInterval
 	}
 }
 

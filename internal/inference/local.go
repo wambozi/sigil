@@ -279,6 +279,30 @@ func (l *LocalBackend) modelName() string {
 	return "local"
 }
 
+// ProcessInfo returns the PID and managed status of the llama-server process.
+// ok is false if no process is running.
+func (l *LocalBackend) ProcessInfo() (pid int, managed bool, ok bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.proc == nil {
+		return 0, l.managed, false
+	}
+	return l.proc.Pid, l.managed, true
+}
+
+// ModelName returns the model identifier for this backend.
+func (l *LocalBackend) ModelName() string {
+	return l.modelName()
+}
+
+// CtxSize returns the configured context window size.
+func (l *LocalBackend) CtxSize() int {
+	if l.cfg.CtxSize <= 0 {
+		return 4096
+	}
+	return l.cfg.CtxSize
+}
+
 // Complete sends a chat completion request to the local server.
 func (l *LocalBackend) Complete(ctx context.Context, system, user string) (*CompletionResult, error) {
 	msgs := make([]chatMessage, 0, 2)
