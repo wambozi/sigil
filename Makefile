@@ -67,6 +67,7 @@ $(BIN):
 sync-assets:
 	@cp scripts/shell-hook.zsh  internal/assets/scripts/shell-hook.zsh
 	@cp scripts/shell-hook.bash internal/assets/scripts/shell-hook.bash
+	@cp scripts/shell-hook.fish internal/assets/scripts/shell-hook.fish
 	@cp deploy/sigild.service   internal/assets/deploy/sigild.service
 
 ## install: build and install all binaries to $GOPATH/bin.
