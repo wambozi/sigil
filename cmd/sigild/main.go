@@ -63,6 +63,7 @@ func main() {
 	}
 
 	cfg := parseFlags()
+	applyTierDefaults(cfg.fileCfg)
 
 	log := newLogger(cfg.logLevel)
 	log.Info("sigild starting", "version", "0.1.0-dev")
@@ -163,6 +164,29 @@ func parseAnalyzeEvery(cfg *config.Config) time.Duration {
 		return time.Hour
 	}
 	return d
+}
+
+// applyTierDefaults sets sensible defaults based on the cloud tier.
+// Tiers set defaults, not hard limits — explicit user settings are preserved.
+func applyTierDefaults(cfg *config.Config) {
+	switch cfg.Cloud.Tier {
+	case "", "free":
+		// Free tier: all defaults are local (already the case).
+	case "pro":
+		if cfg.Inference.Mode == "" {
+			cfg.Inference.Mode = "remotefirst"
+		}
+	case "team":
+		if cfg.Inference.Mode == "" {
+			cfg.Inference.Mode = "remotefirst"
+		}
+		if cfg.CloudSync.Enabled == nil {
+			t := true
+			cfg.CloudSync.Enabled = &t
+		}
+	default:
+		slog.Warn("unrecognized cloud tier, using free-tier defaults", "tier", cfg.Cloud.Tier)
+	}
 }
 
 // --- Runtime ----------------------------------------------------------------
