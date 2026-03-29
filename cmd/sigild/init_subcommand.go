@@ -185,7 +185,7 @@ func installShellHook(home string) error {
 
 	_, err = fmt.Fprintf(f, "\n# Sigil OS shell hook\n%s\n", sourceLine)
 	if err != nil {
-		return err
+		return fmt.Errorf("write hook source line to %s: %w", rcFile, err)
 	}
 	fmt.Printf("  [ok]   shell hook appended to %s\n", rcFile)
 	return nil
@@ -194,14 +194,17 @@ func installShellHook(home string) error {
 // copyEmbeddedHook writes a shell hook from the embedded asset FS to dst.
 func copyEmbeddedHook(name, dst string) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
-		return err
+		return fmt.Errorf("create hook dir %s: %w", filepath.Dir(dst), err)
 	}
 
 	data, err := assets.FS.ReadFile("scripts/" + name)
 	if err != nil {
 		return fmt.Errorf("embedded asset scripts/%s: %w", name, err)
 	}
-	return os.WriteFile(dst, data, 0o644)
+	if err := os.WriteFile(dst, data, 0o644); err != nil {
+		return fmt.Errorf("write hook file %s: %w", dst, err)
+	}
+	return nil
 }
 
 // installPowerShellHook installs the PowerShell shell hook on Windows.
@@ -246,7 +249,7 @@ func installPowerShellHook(home string) error {
 
 	_, err = fmt.Fprintf(f, "\n# Sigil OS shell hook\n%s\n", sourceLine)
 	if err != nil {
-		return err
+		return fmt.Errorf("write hook source line to %s: %w", rcFile, err)
 	}
 	fmt.Printf("  [ok]   PowerShell hook appended to %s\n", rcFile)
 	return nil
