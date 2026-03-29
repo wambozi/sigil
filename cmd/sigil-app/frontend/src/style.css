@@ -86,8 +86,10 @@ body {
 .status-bar {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
   padding: 12px 16px;
+  padding-left: 78px; /* clear macOS traffic lights */
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border);
   font-size: 12px;
@@ -114,8 +116,15 @@ body {
   flex-shrink: 0;
 }
 
+.status-connection {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .status-task {
-  margin-left: auto;
+  flex: 1;
   color: var(--fg-secondary);
   font-size: 11px;
   overflow: hidden;
@@ -895,6 +904,43 @@ body {
 }
 
 /* --- Save Button --------------------------------------------------------- */
+
+.daemon-controls {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-start;
+}
+
+.daemon-btn {
+  padding: 6px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.daemon-btn:hover:not(:disabled) {
+  background: var(--bg-secondary);
+}
+
+.daemon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.daemon-btn-warn {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.daemon-btn-warn:hover:not(:disabled) {
+  background: var(--danger);
+  color: #fff;
+}
 
 .save-btn {
   padding: 8px 24px;

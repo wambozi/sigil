@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	goruntime "runtime"
 	"sync"
@@ -462,6 +463,44 @@ func (a *App) DisablePlugin(name string) error {
 		return fmt.Errorf("daemon error: %s", resp.Error)
 	}
 	return nil
+}
+
+// StopDaemon sends a shutdown command to sigild.
+func (a *App) StopDaemon() error {
+	resp, err := a.call("shutdown", nil)
+	if err != nil {
+		return err
+	}
+	if !resp.OK {
+		return fmt.Errorf("daemon error: %s", resp.Error)
+	}
+	return nil
+}
+
+// StartDaemon launches sigild as a background process.
+func (a *App) StartDaemon() error {
+	bin, err := exec.LookPath("sigild")
+	if err != nil {
+		return fmt.Errorf("sigild not found in PATH: %w", err)
+	}
+	cmd := exec.Command(bin, "run")
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start sigild: %w", err)
+	}
+	// Detach — don't wait for the process
+	go cmd.Wait()
+	return nil
+}
+
+// RestartDaemon stops and then starts the daemon.
+func (a *App) RestartDaemon() error {
+	// Best-effort stop — ignore errors (daemon might already be stopped)
+	_ = a.StopDaemon()
+	// Wait for the daemon to shut down and socket to close
+	time.Sleep(2 * time.Second)
+	return a.StartDaemon()
 }
 
 // IsConnected returns whether the app has an active subscription connection to

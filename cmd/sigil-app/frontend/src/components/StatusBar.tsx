@@ -10,13 +10,15 @@ export function StatusBar({ connected, currentTask }: StatusBarProps) {
 
   return (
     <div class="status-bar">
-      <span
-        class={`status-dot ${connected ? "connected" : "disconnected"}`}
-      />
-      <span class="status-text">
-        {connected ? "Connected" : "Disconnected"}
-      </span>
       {taskLabel && <span class="status-task">{taskLabel}</span>}
+      <div class="status-connection">
+        <span class="status-text">
+          {connected ? "Connected" : "Disconnected"}
+        </span>
+        <span
+          class={`status-dot ${connected ? "connected" : "disconnected"}`}
+        />
+      </div>
     </div>
   );
 }

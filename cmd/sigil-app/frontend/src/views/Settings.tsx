@@ -8,6 +8,9 @@ declare const window: Window & {
       App: {
         GetConfig(): Promise<any>;
         SetConfig(config: any): Promise<any>;
+        StopDaemon(): Promise<void>;
+        StartDaemon(): Promise<void>;
+        RestartDaemon(): Promise<void>;
       };
     };
   };
@@ -22,6 +25,7 @@ const NOTIFICATION_LABELS: Record<number, string> = {
   4: "4 - Autonomous",
 };
 const INFERENCE_MODES = ["local", "localfirst", "remotefirst", "remote"];
+const ML_MODES = ["local", "localfirst", "remotefirst", "remote", "disabled"];
 
 export function Settings() {
   const [config, setConfig] = useState<any>(null);
@@ -31,6 +35,7 @@ export function Settings() {
   const [saving, setSaving] = useState(false);
   const [banner, setBanner] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [restartRequired, setRestartRequired] = useState(false);
+  const [daemonAction, setDaemonAction] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -110,6 +115,7 @@ export function Settings() {
   const daemon = config.daemon || {};
   const notifier = config.notifier || {};
   const inference = config.inference || {};
+  const ml = config.ml || {};
   const retention = config.retention || {};
   const fleet = config.fleet || {};
 
@@ -123,6 +129,61 @@ export function Settings() {
           Some changes require a daemon restart to take effect.
         </div>
       )}
+
+      {/* Daemon Control */}
+      <div class="settings-section">
+        <h3>Daemon</h3>
+        <div class="settings-row daemon-controls">
+          <button
+            class="btn daemon-btn"
+            onClick={async () => {
+              setDaemonAction("starting");
+              try {
+                await window.go.main.App.StartDaemon();
+                setBanner({ type: "success", message: "Daemon started." });
+              } catch {
+                setBanner({ type: "error", message: "Failed to start daemon." });
+              }
+              setDaemonAction(null);
+            }}
+            disabled={!!daemonAction}
+          >
+            {daemonAction === "starting" ? "Starting..." : "Start"}
+          </button>
+          <button
+            class="btn daemon-btn daemon-btn-warn"
+            onClick={async () => {
+              setDaemonAction("stopping");
+              try {
+                await window.go.main.App.StopDaemon();
+                setBanner({ type: "success", message: "Daemon stopped." });
+              } catch {
+                setBanner({ type: "error", message: "Failed to stop daemon." });
+              }
+              setDaemonAction(null);
+            }}
+            disabled={!!daemonAction}
+          >
+            {daemonAction === "stopping" ? "Stopping..." : "Stop"}
+          </button>
+          <button
+            class="btn daemon-btn"
+            onClick={async () => {
+              setDaemonAction("restarting");
+              try {
+                await window.go.main.App.RestartDaemon();
+                setBanner({ type: "success", message: "Daemon restarted." });
+              } catch {
+                setBanner({ type: "error", message: "Failed to restart daemon." });
+              }
+              setDaemonAction(null);
+            }}
+            disabled={!!daemonAction}
+          >
+            {daemonAction === "restarting" ? "Restarting..." : "Restart"}
+          </button>
+        </div>
+      </div>
 
       {/* General */}
       <div class="settings-section">
@@ -189,14 +250,14 @@ export function Settings() {
         </div>
       </div>
 
-      {/* Inference */}
+      {/* LLM Inference */}
       <div class="settings-section">
-        <h3>Inference</h3>
+        <h3>LLM Inference</h3>
         <div class="settings-row">
           <label class="settings-label">Mode</label>
           <select
             class="settings-select"
-            value={inference.mode || "local"}
+            value={inference.mode || "localfirst"}
             onChange={(e) =>
               update("inference.mode", (e.target as HTMLSelectElement).value)
             }
@@ -207,13 +268,110 @@ export function Settings() {
           </select>
         </div>
         <div class="settings-row">
+          <Toggle
+            label="Local Enabled"
+            checked={inference.local?.enabled ?? false}
+            onChange={(v) => update("inference.local.enabled", v)}
+          />
+        </div>
+        <div class="settings-row">
+          <label class="settings-label">Local Server URL</label>
+          <input
+            class="settings-input"
+            type="text"
+            value={inference.local?.server_url || ""}
+            onInput={(e) =>
+              update("inference.local.server_url", (e.target as HTMLInputElement).value)
+            }
+            placeholder="http://127.0.0.1:11434"
+          />
+        </div>
+        <div class="settings-row">
+          <Toggle
+            label="Cloud Enabled"
+            checked={inference.cloud?.enabled ?? false}
+            onChange={(v) => update("inference.cloud.enabled", v)}
+          />
+        </div>
+        <div class="settings-row">
+          <label class="settings-label">Cloud Provider</label>
+          <select
+            class="settings-select"
+            value={inference.cloud?.provider || ""}
+            onChange={(e) =>
+              update("inference.cloud.provider", (e.target as HTMLSelectElement).value)
+            }
+          >
+            <option value="">Select...</option>
+            <option value="anthropic">Anthropic</option>
+            <option value="openai">OpenAI</option>
+          </select>
+        </div>
+        <div class="settings-row">
           <label class="settings-label">Cloud API Key</label>
           <input
             class="settings-input"
             type="password"
-            value={inference.cloud_api_key || ""}
+            value={inference.cloud?.api_key || ""}
             onInput={(e) =>
-              update("inference.cloud_api_key", (e.target as HTMLInputElement).value)
+              update("inference.cloud.api_key", (e.target as HTMLInputElement).value)
+            }
+            placeholder="Enter API key..."
+          />
+        </div>
+      </div>
+
+      {/* ML Pipeline */}
+      <div class="settings-section">
+        <h3>ML Pipeline</h3>
+        <div class="settings-row">
+          <label class="settings-label">Mode</label>
+          <select
+            class="settings-select"
+            value={ml.mode || "local"}
+            onChange={(e) =>
+              update("ml.mode", (e.target as HTMLSelectElement).value)
+            }
+          >
+            {ML_MODES.map((m) => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
+        </div>
+        <div class="settings-row">
+          <Toggle
+            label="Local Enabled"
+            checked={ml.local?.enabled ?? false}
+            onChange={(v) => update("ml.local.enabled", v)}
+          />
+        </div>
+        <div class="settings-row">
+          <label class="settings-label">Local Server URL</label>
+          <input
+            class="settings-input"
+            type="text"
+            value={ml.local?.server_url || ""}
+            onInput={(e) =>
+              update("ml.local.server_url", (e.target as HTMLInputElement).value)
+            }
+            placeholder="http://127.0.0.1:7774"
+          />
+        </div>
+        <div class="settings-row">
+          <Toggle
+            label="Cloud Enabled"
+            checked={ml.cloud?.enabled ?? false}
+            onChange={(v) => update("ml.cloud.enabled", v)}
+          />
+        </div>
+        <div class="settings-row">
+          <label class="settings-label">Cloud API Key</label>
+          <input
+            class="settings-input"
+            type="password"
+            value={ml.cloud?.api_key || ""}
+            onInput={(e) =>
+              update("ml.cloud.api_key", (e.target as HTMLInputElement).value)
             }
             placeholder="Enter API key..."
           />

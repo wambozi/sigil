@@ -23,6 +23,8 @@ jobs:
             goarch: amd64
           - goos: darwin
             goarch: arm64
+          - goos: windows
+            goarch: amd64
 
     steps:
       - uses: actions/checkout@v4
@@ -35,7 +37,7 @@ jobs:
       - name: Sync embedded assets
         run: make sync-assets
 
-      - name: Build binaries
+      - name: Build all binaries
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
@@ -44,24 +46,32 @@ jobs:
           VERSION="${{ github.ref_name }}"
           LDFLAGS="-X main.version=${VERSION}"
           SUFFIX="${{ matrix.goos }}-${{ matrix.goarch }}"
-          go build -ldflags "${LDFLAGS}" -o "sigild-${SUFFIX}" ./cmd/sigild/
-          go build -ldflags "${LDFLAGS}" -o "sigilctl-${SUFFIX}" ./cmd/sigilctl/
+          EXT=""
+          if [ "${{ matrix.goos }}" = "windows" ]; then EXT=".exe"; fi
+
+          # Core binaries
+          go build -ldflags "${LDFLAGS}" -o "sigild-${SUFFIX}${EXT}" ./cmd/sigild/
+          go build -ldflags "${LDFLAGS}" -o "sigilctl-${SUFFIX}${EXT}" ./cmd/sigilctl/
+
+          # All plugins
           for p in ./plugins/sigil-plugin-*/; do
             name=$(basename "$p")
-            go build -ldflags "${LDFLAGS}" -o "${name}-${SUFFIX}" "$p"
+            go build -ldflags "${LDFLAGS}" -o "${name}-${SUFFIX}${EXT}" "$p"
           done
 
       - name: Generate checksums
         run: |
           SUFFIX="${{ matrix.goos }}-${{ matrix.goarch }}"
-          sha256sum *-${SUFFIX} > "checksums-${SUFFIX}.txt"
+          sha256sum *-${SUFFIX}* > "checksums-${SUFFIX}.txt"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: binaries-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
-            *-${{ matrix.goos }}-${{ matrix.goarch }}
+            sigild-${{ matrix.goos }}-${{ matrix.goarch }}*
+            sigilctl-${{ matrix.goos }}-${{ matrix.goarch }}*
+            sigil-plugin-*-${{ matrix.goos }}-${{ matrix.goarch }}*
             checksums-${{ matrix.goos }}-${{ matrix.goarch }}.txt
 
   build-app:

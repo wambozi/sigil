@@ -15,6 +15,9 @@ declare module "../wailsjs/go/main/App" {
   export function InstallPlugin(name: string): Promise<void>;
   export function EnablePlugin(name: string): Promise<void>;
   export function DisablePlugin(name: string): Promise<void>;
+  export function StopDaemon(): Promise<void>;
+  export function StartDaemon(): Promise<void>;
+  export function RestartDaemon(): Promise<void>;
 }
 
 declare module "../wailsjs/runtime/runtime" {

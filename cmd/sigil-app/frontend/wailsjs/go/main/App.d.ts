@@ -29,6 +29,12 @@ export function InstallPlugin(arg1:string):Promise<void>;
 
 export function IsConnected():Promise<boolean>;
 
+export function RestartDaemon():Promise<void>;
+
 export function SetConfig(arg1:Record<string, any>):Promise<Record<string, any>>;
 
 export function SetLevel(arg1:number):Promise<void>;
+
+export function StartDaemon():Promise<void>;
+
+export function StopDaemon():Promise<void>;

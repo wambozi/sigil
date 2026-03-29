@@ -58,10 +58,22 @@ export function IsConnected() {
   return window['go']['main']['App']['IsConnected']();
 }
 
+export function RestartDaemon() {
+  return window['go']['main']['App']['RestartDaemon']();
+}
+
 export function SetConfig(arg1) {
   return window['go']['main']['App']['SetConfig'](arg1);
 }
 
 export function SetLevel(arg1) {
   return window['go']['main']['App']['SetLevel'](arg1);
+}
+
+export function StartDaemon() {
+  return window['go']['main']['App']['StartDaemon']();
+}
+
+export function StopDaemon() {
+  return window['go']['main']['App']['StopDaemon']();
 }
