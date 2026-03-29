@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"path/filepath"
 	"sync"
 )
 
@@ -101,6 +102,12 @@ func (s *Server) SubscriberCount(topic string) int {
 // Returns immediately; the accept loop runs in the background until ctx is
 // cancelled.
 func (s *Server) Start(ctx context.Context) error {
+	// Ensure the socket directory exists (important on Windows where
+	// the socket lives under %LOCALAPPDATA%\sigil\).
+	if err := os.MkdirAll(filepath.Dir(s.socketPath), 0o700); err != nil {
+		return fmt.Errorf("socket: mkdir %s: %w", filepath.Dir(s.socketPath), err)
+	}
+
 	// Remove stale socket from a previous daemon run.
 	_ = os.Remove(s.socketPath)
 

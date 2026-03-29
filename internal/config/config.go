@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
@@ -166,7 +167,15 @@ func Defaults() *Config {
 }
 
 // DefaultPath returns the canonical config file location, respecting XDG_CONFIG_HOME.
+// On Windows, uses %APPDATA% (Roaming) as the config base.
 func DefaultPath() string {
+	if runtime.GOOS == "windows" {
+		appdata := os.Getenv("APPDATA")
+		if appdata == "" {
+			appdata = filepath.Join(os.Getenv("USERPROFILE"), "AppData", "Roaming")
+		}
+		return filepath.Join(appdata, "sigil", "config.toml")
+	}
 	base := os.Getenv("XDG_CONFIG_HOME")
 	if base == "" {
 		h, _ := os.UserHomeDir()

@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -200,7 +199,7 @@ func (l *LocalBackend) startServer() error {
 	cmd := exec.Command(bin, "serve", "--port", port)
 	cmd.Stdout = os.Stderr // route to daemon stderr for visibility
 	cmd.Stderr = os.Stderr
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	setProcGroup(cmd)
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start %s: %w", bin, err)
@@ -292,7 +291,7 @@ func (l *LocalBackend) killProcess() error {
 		return nil
 	}
 
-	_ = proc.Signal(syscall.SIGTERM)
+	_ = signalTerm(proc)
 	done := make(chan struct{})
 	go func() {
 		_, _ = proc.Wait()
@@ -304,7 +303,7 @@ func (l *LocalBackend) killProcess() error {
 		l.log.Debug("ml/local: server exited gracefully")
 	case <-time.After(mlShutdownTimeout):
 		l.log.Warn("ml/local: server did not exit, sending SIGKILL")
-		_ = proc.Signal(syscall.SIGKILL)
+		_ = signalKill(proc)
 		<-done
 	}
 	return nil

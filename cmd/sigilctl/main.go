@@ -537,16 +537,30 @@ func printEvents(events []event.Event) error {
 // --- Path helpers -----------------------------------------------------------
 
 func defaultSocketPath() string {
+	if goruntime.GOOS == "windows" {
+		appdata := os.Getenv("LOCALAPPDATA")
+		if appdata == "" {
+			appdata = filepath.Join(os.Getenv("USERPROFILE"), "AppData", "Local")
+		}
+		return filepath.Join(appdata, "sigil", "sigild.sock")
+	}
 	if dir := os.Getenv("XDG_RUNTIME_DIR"); dir != "" {
 		return filepath.Join(dir, "sigild.sock")
 	}
 	if goruntime.GOOS == "darwin" {
 		return filepath.Join(os.TempDir(), "sigild.sock")
 	}
-	return fmt.Sprintf("/run/user/%d/sigild.sock", os.Getuid())
+	return fmt.Sprintf("/run/user/%d/sigild.sock", currentUID())
 }
 
 func defaultDBPath() string {
+	if goruntime.GOOS == "windows" {
+		appdata := os.Getenv("LOCALAPPDATA")
+		if appdata == "" {
+			appdata = filepath.Join(os.Getenv("USERPROFILE"), "AppData", "Local")
+		}
+		return filepath.Join(appdata, "sigil", "sigild", "data.db")
+	}
 	base := os.Getenv("XDG_DATA_HOME")
 	if base == "" {
 		h, _ := os.UserHomeDir()
@@ -1418,7 +1432,7 @@ func cmdStart(socketPath string) error {
 func startDarwin() error {
 	label := "com.sigil.sigild"
 	// Try launchctl kickstart first (works if agent is loaded but stopped).
-	uid := os.Getuid()
+	uid := currentUID()
 	out, err := exec.Command("launchctl", "kickstart", fmt.Sprintf("gui/%d/%s", uid, label)).CombinedOutput()
 	if err == nil {
 		fmt.Println("sigild started via launchd")

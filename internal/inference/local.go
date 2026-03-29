@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"strconv"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -135,7 +134,7 @@ func (l *LocalBackend) startServer() error {
 	cmd.Stdout = os.Stderr // llama-server logs go to daemon stderr
 	cmd.Stderr = os.Stderr
 	// Set process group so we can kill the entire group on shutdown.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	setProcGroup(cmd)
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("exec %s: %w", l.cfg.ServerBin, err)
@@ -251,8 +250,8 @@ func (l *LocalBackend) killProcess() {
 		return
 	}
 
-	// Send SIGTERM.
-	_ = proc.Signal(syscall.SIGTERM)
+	// Send SIGTERM (or Kill on Windows).
+	_ = signalTerm(proc)
 
 	// Wait up to shutdownTimeout for graceful exit.
 	done := make(chan struct{})
@@ -266,7 +265,7 @@ func (l *LocalBackend) killProcess() {
 		l.log.Debug("inference/local: llama-server exited gracefully")
 	case <-time.After(shutdownTimeout):
 		l.log.Warn("inference/local: llama-server did not exit, sending SIGKILL")
-		_ = proc.Signal(syscall.SIGKILL)
+		_ = signalKill(proc)
 		<-done
 	}
 }

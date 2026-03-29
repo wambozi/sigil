@@ -185,7 +185,14 @@ function getSocketPath(): string {
   if (configured) {
     return configured;
   }
-  const runtime = process.env.XDG_RUNTIME_DIR || `/run/user/${os.userInfo().uid}`;
+  if (process.platform === "win32") {
+    const appData =
+      process.env.LOCALAPPDATA ||
+      path.join(os.homedir(), "AppData", "Local");
+    return path.join(appData, "sigil", "sigild.sock");
+  }
+  const runtime =
+    process.env.XDG_RUNTIME_DIR || `/run/user/${os.userInfo().uid}`;
   return path.join(runtime, "sigild.sock");
 }
 

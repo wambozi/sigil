@@ -4,5 +4,5 @@ package assets
 
 import "embed"
 
-//go:embed scripts/shell-hook.zsh scripts/shell-hook.bash deploy/sigild.service
+//go:embed scripts/shell-hook.zsh scripts/shell-hook.bash scripts/shell-hook.ps1 deploy/sigild.service
 var FS embed.FS

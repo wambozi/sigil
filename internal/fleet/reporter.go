@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -461,12 +462,21 @@ func (r *Reporter) postReport(ctx context.Context, report FleetReport) error {
 // loadOrCreateNodeID reads or generates a stable anonymous node ID.
 // The ID is persisted to ~/.local/share/sigild/node_id.
 func loadOrCreateNodeID(log *slog.Logger) string {
-	base := os.Getenv("XDG_DATA_HOME")
-	if base == "" {
-		h, _ := os.UserHomeDir()
-		base = filepath.Join(h, ".local", "share")
+	var dir string
+	if runtime.GOOS == "windows" {
+		appdata := os.Getenv("LOCALAPPDATA")
+		if appdata == "" {
+			appdata = filepath.Join(os.Getenv("USERPROFILE"), "AppData", "Local")
+		}
+		dir = filepath.Join(appdata, "sigil", "sigild")
+	} else {
+		base := os.Getenv("XDG_DATA_HOME")
+		if base == "" {
+			h, _ := os.UserHomeDir()
+			base = filepath.Join(h, ".local", "share")
+		}
+		dir = filepath.Join(base, "sigild")
 	}
-	dir := filepath.Join(base, "sigild")
 	path := filepath.Join(dir, "node_id")
 
 	data, err := os.ReadFile(path)

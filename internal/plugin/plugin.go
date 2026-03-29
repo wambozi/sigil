@@ -18,7 +18,6 @@ import (
 	"os"
 	"os/exec"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -125,7 +124,7 @@ func (m *Manager) Stop() {
 		inst.mu.Lock()
 		if inst.proc != nil {
 			m.log.Info("plugin: stopping", "plugin", name)
-			_ = inst.proc.Signal(syscall.SIGTERM)
+			_ = signalTerm(inst.proc)
 			done := make(chan struct{})
 			go func() {
 				_, _ = inst.proc.Wait()
@@ -134,7 +133,7 @@ func (m *Manager) Stop() {
 			select {
 			case <-done:
 			case <-time.After(5 * time.Second):
-				_ = inst.proc.Signal(syscall.SIGKILL)
+				_ = signalKill(inst.proc)
 				<-done
 			}
 			inst.proc = nil
@@ -244,7 +243,7 @@ func (m *Manager) startPlugin(ctx context.Context, inst *Instance) error {
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Stdout = os.Stderr // route plugin output to daemon stderr
 	cmd.Stderr = os.Stderr
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	setProcGroup(cmd)
 
 	// Pass plugin-specific env vars.
 	cmd.Env = os.Environ()

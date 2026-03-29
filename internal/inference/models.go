@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 const DefaultModel = "qwen2.5-1.5b-q4_k_m"
@@ -41,8 +42,16 @@ var KnownModels = map[string]ModelSpec{
 }
 
 // ModelsDir returns the directory for cached models.
-// Default: ~/.local/share/sigild/models/
+// Default: ~/.local/share/sigild/models/ (Linux/macOS)
+//          %LOCALAPPDATA%\sigil\sigild\models\ (Windows)
 func ModelsDir() string {
+	if runtime.GOOS == "windows" {
+		appdata := os.Getenv("LOCALAPPDATA")
+		if appdata == "" {
+			appdata = filepath.Join(os.Getenv("USERPROFILE"), "AppData", "Local")
+		}
+		return filepath.Join(appdata, "sigil", "sigild", "models")
+	}
 	base := os.Getenv("XDG_DATA_HOME")
 	if base == "" {
 		h, _ := os.UserHomeDir()
