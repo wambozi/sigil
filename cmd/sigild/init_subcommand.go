@@ -95,6 +95,14 @@ func runInit() error {
 		}
 	}
 
+	// 10. Tray app auto-start (optional)
+	fmt.Print("\nEnable Sigil tray app on login? [Y/n] ")
+	if answer, _ := reader.ReadString('\n'); strings.TrimSpace(strings.ToLower(answer)) != "n" {
+		if err := installAppAutoStart(home); err != nil {
+			fmt.Fprintf(os.Stderr, "  [warn] tray app auto-start: %v\n", err)
+		}
+	}
+
 	fmt.Println()
 	fmt.Println("sigild init: done. Start a new shell or source your rc file to activate the hook.")
 	return nil
