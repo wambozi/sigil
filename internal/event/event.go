@@ -16,6 +16,7 @@ const (
 	KindTerminal  Kind = "terminal"  // shell command (pushed via socket ingest)
 	KindAI        Kind = "ai"        // AI interaction (query, suggestion)
 	KindClipboard Kind = "clipboard" // clipboard change detection (metadata only)
+	KindAppState  Kind = "app_state" // application state events (structural metadata only)
 )
 
 // Event is the atomic unit of observation.  Payload is kept as a generic map
