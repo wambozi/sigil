@@ -544,6 +544,17 @@ export function Settings({ onRerunSetup, connected }: { onRerunSetup?: () => voi
         </div>
       </div>
 
+      {/* Cloud */}
+      <div class="settings-section">
+        <h3>Sigil Cloud</h3>
+        <div class="settings-section-desc">
+          Sign in to access cloud AI, team sync, and ML predictions.
+        </div>
+        <div class="settings-card">
+          <CloudSettings />
+        </div>
+      </div>
+
       {/* Data */}
       <div class="settings-section">
         <h3>Data</h3>

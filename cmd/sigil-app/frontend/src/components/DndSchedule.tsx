@@ -1,16 +1,3 @@
-import { useState, useEffect } from "preact/hooks";
-
-declare const window: Window & {
-  go: {
-    main: {
-      App: {
-        // DND methods use the socket directly via generic call
-        GetConfig(): Promise<any>;
-      };
-    };
-  };
-};
-
 const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 
 interface DndState {
