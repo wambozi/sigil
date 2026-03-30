@@ -10,7 +10,14 @@ type AnalyticsResult struct {
 	DailyCounts        []DailyCount        `json:"daily_counts"`
 	CategoryBreakdown  []CategoryBreakdown `json:"category_breakdown"`
 	HourlyDistribution [24]int             `json:"hourly_distribution"`
+	DailyHourly        []DailyHourlyRow    `json:"daily_hourly"`
 	StreakDays         int                 `json:"streak_days"`
+}
+
+// DailyHourlyRow is one day's per-hour breakdown.
+type DailyHourlyRow struct {
+	Date  string  `json:"date"`
+	Hours [24]int `json:"hours"`
 }
 
 // DailyCount is a single day's suggestion counts.

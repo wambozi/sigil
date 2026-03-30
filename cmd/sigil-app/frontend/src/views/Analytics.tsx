@@ -129,7 +129,10 @@ export function Analytics() {
       <AcceptanceChart data={data.daily_counts || []} />
       <DailyChart data={data.daily_counts || []} />
       <CategoryChart data={data.category_breakdown || []} />
-      <HeatmapChart data={data.hourly_distribution || new Array(24).fill(0)} />
+      <HeatmapChart
+        data={data.hourly_distribution || new Array(24).fill(0)}
+        dailyHourly={data.daily_hourly}
+      />
     </div>
   );
 }

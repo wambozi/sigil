@@ -86,7 +86,13 @@ type analyticsResult struct {
 	DailyCounts        []dailyCount        `json:"daily_counts"`
 	CategoryBreakdown  []categoryBreakdown `json:"category_breakdown"`
 	HourlyDistribution [24]int             `json:"hourly_distribution"`
+	DailyHourly        []dailyHourly       `json:"daily_hourly"`
 	StreakDays         int                 `json:"streak_days"`
+}
+
+type dailyHourly struct {
+	Date  string  `json:"date"`
+	Hours [24]int `json:"hours"`
 }
 
 type dailyCount struct {
@@ -179,10 +185,30 @@ func computeAnalytics(ctx context.Context, db *store.Store, sinceMS int64, days 
 		result.CategoryBreakdown = append(result.CategoryBreakdown, *cb)
 	}
 
-	// Hourly distribution.
+	// Hourly distribution (aggregate + per-day).
+	dhMap := make(map[string]*[24]int)
 	for _, sg := range suggestions {
 		hour := sg.CreatedAt.Hour()
 		result.HourlyDistribution[hour]++
+
+		date := sg.CreatedAt.Format("2006-01-02")
+		if dhMap[date] == nil {
+			dhMap[date] = &[24]int{}
+		}
+		dhMap[date][hour]++
+	}
+
+	// Build daily_hourly for the last N days (most recent first).
+	for i := 0; i < days && i < 7; i++ {
+		date := time.Now().AddDate(0, 0, -i).Format("2006-01-02")
+		hours := [24]int{}
+		if h, ok := dhMap[date]; ok {
+			hours = *h
+		}
+		result.DailyHourly = append(result.DailyHourly, dailyHourly{
+			Date:  date,
+			Hours: hours,
+		})
 	}
 
 	// Streak: consecutive days with at least one accepted suggestion.
