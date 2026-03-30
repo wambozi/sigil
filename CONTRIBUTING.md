@@ -46,7 +46,7 @@ See the full Go code standards in the
 New packages must fit the dependency graph without creating cycles:
 
 ```
-event → config → store → inference → collector → notifier → analyzer → actuator → fleet → socket → cmd/sigild
+event → config → store → inference → collector → notifier → analyzer → actuator → fleet → sync → socket → cmd/sigild
 ```
 
 `event` is the leaf — zero internal imports. Violating the DAG is a

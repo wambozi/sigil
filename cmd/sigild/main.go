@@ -44,6 +44,8 @@ import (
 	"github.com/wambozi/sigil/internal/ml"
 	"net/http"
 
+	signsync "github.com/wambozi/sigil/internal/sync"
+
 	"github.com/wambozi/sigil/internal/network"
 	"github.com/wambozi/sigil/internal/notifier"
 	"github.com/wambozi/sigil/internal/plugin"
@@ -434,6 +436,26 @@ func run(cfg daemonConfig, log *slog.Logger) error {
 		log.Info("fleet reporter started", "endpoint", cfg.fileCfg.Fleet.Endpoint)
 	}
 	registerFleetHandlers(srv, fleetReporter)
+
+	// --- Sync Agent ---------------------------------------------------------
+	var syncAgent *signsync.Agent
+	if cfg.fileCfg.Sync.Enabled {
+		syncInterval := 5 * time.Second
+		if cfg.fileCfg.Sync.Interval != "" {
+			if d, err := time.ParseDuration(cfg.fileCfg.Sync.Interval); err == nil && d > 0 {
+				syncInterval = d
+			}
+		}
+		syncAgent = signsync.New(db, db, signsync.Config{
+			APIURL:       cfg.fileCfg.Sync.APIURL,
+			APIKey:       cfg.fileCfg.Sync.APIKey,
+			BatchSize:    cfg.fileCfg.Sync.Batch,
+			PollInterval: syncInterval,
+		}, log)
+		go syncAgent.Run(ctx)
+		log.Info("sync agent started", "api_url", cfg.fileCfg.Sync.APIURL)
+	}
+	registerSyncHandlers(srv, syncAgent)
 
 	if err := srv.Start(ctx); err != nil {
 		return fmt.Errorf("start socket: %w", err)
@@ -1981,5 +2003,38 @@ func registerFleetHandlers(srv *socket.Server, reporter *fleet.Reporter) {
 			return socket.Response{OK: true, Payload: socket.MarshalPayload(map[string]any{"policy": nil})}
 		}
 		return socket.Response{OK: true, Payload: socket.MarshalPayload(policy)}
+	})
+}
+
+// --- Sync socket handlers ---------------------------------------------------
+
+func registerSyncHandlers(srv *socket.Server, agent *signsync.Agent) {
+	srv.Handle("sync-status", func(ctx context.Context, _ socket.Request) socket.Response {
+		if agent == nil {
+			return socket.Response{OK: true, Payload: socket.MarshalPayload(map[string]any{
+				"enabled": false,
+			})}
+		}
+		status, err := agent.Status(ctx)
+		if err != nil {
+			return socket.Response{Error: fmt.Sprintf("sync status: %s", err)}
+		}
+		return socket.Response{OK: true, Payload: socket.MarshalPayload(status)}
+	})
+
+	srv.Handle("sync-pause", func(_ context.Context, _ socket.Request) socket.Response {
+		if agent == nil {
+			return socket.Response{Error: "sync agent is not enabled"}
+		}
+		agent.Pause()
+		return socket.Response{OK: true, Payload: socket.MarshalPayload(map[string]any{"paused": true})}
+	})
+
+	srv.Handle("sync-resume", func(_ context.Context, _ socket.Request) socket.Response {
+		if agent == nil {
+			return socket.Response{Error: "sync agent is not enabled"}
+		}
+		agent.Resume()
+		return socket.Response{OK: true, Payload: socket.MarshalPayload(map[string]any{"paused": false})}
 	})
 }
