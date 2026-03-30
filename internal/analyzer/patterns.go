@@ -97,6 +97,14 @@ func (d *Detector) Detect(ctx context.Context, window time.Duration) ([]notifier
 		{"task_transition", d.checkTaskTransition},
 		{"stale_task", d.checkStaleTask},
 		{"deep_work_vs_thrashing", d.checkDeepWorkVsThrashing},
+		{"email_then_spreadsheet", d.checkEmailThenSpreadsheet},
+		{"meeting_preparation", d.checkMeetingPreparation},
+		{"document_stale", d.checkDocumentStale},
+		{"cross_app_context_loss", d.checkCrossAppContextLoss},
+		{"spreadsheet_focus_session", d.checkSpreadsheetFocusSession},
+		{"response_pending", d.checkResponsePending},
+		{"repetitive_workflow", d.checkRepetitiveWorkflow},
+		{"end_of_day_summary", d.checkEndOfDaySummary},
 	}
 
 	var out []notifier.Suggestion

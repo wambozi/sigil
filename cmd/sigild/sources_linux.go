@@ -1,4 +1,4 @@
-//go:build darwin
+//go:build linux
 
 package main
 
@@ -9,9 +9,8 @@ import (
 	"github.com/wambozi/sigil/internal/collector/sources"
 )
 
-// addPlatformSources registers macOS-only collector sources.
 func addPlatformSources(col *collector.Collector, log *slog.Logger) {
-	col.Add(&sources.DarwinFocusSource{})
-	col.Add(sources.NewAppStateSource(log))
-	col.Add(&sources.ClipboardSource{})
+	if src := sources.NewLinuxFocusSource(log); src != nil {
+		col.Add(src)
+	}
 }
