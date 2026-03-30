@@ -6,6 +6,7 @@ import { DaySummary } from "./views/DaySummary";
 import { AskSigil } from "./views/AskSigil";
 import { Plugins } from "./views/Plugins";
 import { Settings } from "./views/Settings";
+import { Analytics } from "./views/Analytics";
 import { Wizard } from "./views/Wizard";
 
 // Type stubs — Wails generates the real bindings at build time.
@@ -26,7 +27,7 @@ declare const window: Window & {
   };
 };
 
-type View = "list" | "detail" | "summary" | "ask" | "plugins" | "settings" | "wizard";
+type View = "list" | "detail" | "summary" | "ask" | "plugins" | "analytics" | "settings" | "wizard";
 type Filter = "all" | "pending" | "accepted" | "dismissed";
 
 export interface Suggestion {
@@ -171,6 +172,7 @@ export function App() {
         {view === "summary" && <DaySummary />}
         {view === "ask" && <AskSigil />}
         {view === "plugins" && <Plugins />}
+        {view === "analytics" && <Analytics />}
         {view === "settings" && <Settings onRerunSetup={() => setView("wizard")} />}
       </main>
 
@@ -198,6 +200,12 @@ export function App() {
           onClick={() => setView("plugins")}
         >
           Plugins
+        </button>
+        <button
+          class={`tab ${view === "analytics" ? "active" : ""}`}
+          onClick={() => setView("analytics")}
+        >
+          Analytics
         </button>
         <button
           class={`tab ${view === "settings" ? "active" : ""}`}

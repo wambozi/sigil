@@ -1389,3 +1389,54 @@ body {
 .wizard-nav-spacer {
   flex: 1;
 }
+
+/* --- Analytics ----------------------------------------------------------- */
+
+.analytics-view {
+  padding: 16px;
+}
+
+.analytics-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.analytics-export {
+  display: flex;
+  gap: 6px;
+}
+
+.analytics-streak {
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  background: rgba(52, 199, 89, 0.12);
+  color: var(--success);
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  text-align: center;
+}
+
+.chart-container {
+  margin-bottom: 20px;
+}
+
+.chart-container canvas {
+  width: 100%;
+  display: block;
+}
+
+.chart-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-secondary);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.chart-heatmap {
+  margin-bottom: 12px;
+}

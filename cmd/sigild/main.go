@@ -349,6 +349,7 @@ func run(cfg daemonConfig, log *slog.Logger) error {
 	registerTaskHandlers(srv, taskTracker, db)
 	registerMLHandlers(srv, mlEngine, cfg.dbPath)
 	registerInitHandlers(srv)
+	registerAnalyticsHandlers(srv, db)
 
 	// --- MCP Tool Registry + Ask Handler ------------------------------------
 	mcpRegistry := mcp.NewRegistry()
