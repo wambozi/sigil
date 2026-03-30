@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/tmp/issue-014.md:*)",
+      "Bash(/tmp/issue-016.md:*)",
+      "Bash(gh run:*)",
+      "Bash(git add:*)",
+      "Bash(git push:*)",
+      "Bash(git rebase:*)",
+      "Bash(git cherry-pick:*)",
+      "Bash(git stash:*)",
+      "Bash(gofmt -w cmd/sigild/main.go internal/config/config.go)",
+      "Bash(GIT_EDITOR=true git rebase --continue)",
+      "Bash(gofmt -w cmd/sigilctl/main.go)",
+      "Bash(nix --version)",
+      "Bash(sysctl -n machdep.cpu.brand_string)",
+      "Bash(sw_vers)",
+      "Bash(system_profiler SPHardwareDataType)",
+      "Bash(export PATH=/nix/var/nix/profiles/default/bin:$PATH)",
+      "Bash(nix show-config:*)",
+      "Bash(mkdir -p ~/.config/nix)",
+      "Bash(~/.config/nix/nix.conf)",
+      "Bash(nix flake:*)",
+      "Bash(nix log:*)",
+      "Bash(sudo sh:*)",
+      "Bash(docker info:*)",
+      "Bash(swift run:*)"
+    ]
+  }
+}

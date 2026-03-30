@@ -21,6 +21,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/wambozi/sigil/plugins/internal/pluginutil"
 )
 
 const (
@@ -44,7 +46,12 @@ type HookInput struct {
 	Error      string `json:"error,omitempty"`
 }
 
+var health = pluginutil.NewHealthServer()
+
 func main() {
+	// Start health endpoint in background.
+	go health.ServeHealth(7780)
+
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "install":
@@ -103,7 +110,11 @@ func main() {
 		kind = "tool_error"
 	}
 
-	sendEvent(kind, payload, map[string]any{"repo_root": cwd})
+	if err := sendEvent(kind, payload, map[string]any{"repo_root": cwd}); err != nil {
+		health.RecordError()
+	} else {
+		health.RecordSuccess()
+	}
 }
 
 // --- Launch mode: start a Claude Code session with a prompt ---
@@ -273,7 +284,7 @@ func addHook(hooks map[string]any, hookName string, entry map[string]any) {
 
 // --- Common ---
 
-func sendEvent(kind string, payload, correlation map[string]any) {
+func sendEvent(kind string, payload, correlation map[string]any) error {
 	ingestURL := os.Getenv("SIGIL_INGEST_URL")
 	if ingestURL == "" {
 		ingestURL = defaultIngestURL
@@ -289,15 +300,16 @@ func sendEvent(kind string, payload, correlation map[string]any) {
 
 	body, err := json.Marshal(event)
 	if err != nil {
-		return
+		return err
 	}
 
 	client := &http.Client{Timeout: 2 * time.Second}
 	resp, err := client.Post(ingestURL, "application/json", bytes.NewReader(body))
 	if err != nil {
-		return
+		return err
 	}
 	resp.Body.Close()
+	return nil
 }
 
 func truncate(s string, n int) string {

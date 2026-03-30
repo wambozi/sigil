@@ -1,0 +1,25 @@
+<idea-plugin>
+    <id>dev.sigil.jetbrains</id>
+    <name>Sigil</name>
+    <vendor email="hello@sigil.dev" url="https://sigil.dev">sigil-tech</vendor>
+    <description><![CDATA[
+    Surfaces sigild workflow suggestions as IDE notification balloons.
+    Connects to the local sigild daemon via Unix socket.
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <postStartupActivity implementation="dev.sigil.jetbrains.SigilStartupActivity"/>
+        <statusBarWidgetFactory id="SigilStatusBar" implementation="dev.sigil.jetbrains.SigilStatusBarWidgetFactory"/>
+        <notificationGroup id="Sigil Suggestions" displayType="BALLOON"/>
+    </extensions>
+
+    <actions>
+        <action id="Sigil.ShowSuggestions"
+                class="dev.sigil.jetbrains.SigilShowSuggestionsAction"
+                text="Sigil: Show Suggestions"
+                description="Browse sigild suggestion history">
+        </action>
+    </actions>
+</idea-plugin>

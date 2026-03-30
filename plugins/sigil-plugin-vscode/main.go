@@ -22,6 +22,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/wambozi/sigil/plugins/internal/pluginutil"
 )
 
 const (
@@ -42,6 +44,7 @@ var (
 	pollInterval    time.Duration
 	lastWorkspace   string
 	lastActiveFiles map[string]time.Time
+	health          = pluginutil.NewHealthServer()
 )
 
 func main() {
@@ -57,6 +60,8 @@ func main() {
 	lastActiveFiles = make(map[string]time.Time)
 
 	fmt.Fprintf(os.Stderr, "sigil-plugin-vscode: polling every %s\n", pollInterval)
+
+	go health.ServeHealth(7783)
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGTERM, syscall.SIGINT)
@@ -328,14 +333,17 @@ func installExtensionHook() {
 func send(event PluginEvent) {
 	body, err := json.Marshal(event)
 	if err != nil {
+		health.RecordError()
 		return
 	}
 	client := &http.Client{Timeout: 2 * time.Second}
 	resp, err := client.Post(ingestURL, "application/json", bytes.NewReader(body))
 	if err != nil {
+		health.RecordError()
 		return
 	}
 	resp.Body.Close()
+	health.RecordSuccess()
 }
 
 // Ensure io is used.

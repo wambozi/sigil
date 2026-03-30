@@ -81,11 +81,34 @@ port    = 7773
 4. To revoke: run `sigilctl credential revoke <name>` and delete the credential
    file on the remote host.
 
+## Cloud LLM Proxy (`cloud/llm-proxy`)
+
+The LLM proxy is a cloud-hosted API gateway that proxies inference requests
+from sigild instances to upstream LLM providers (OpenAI, Anthropic). It is
+deployed independently and is not part of the sigild daemon.
+
+### Security surface
+
+- **HTTP listener** — listens on a configurable address (default `:8081`).
+  Must be deployed behind a TLS-terminating reverse proxy in production.
+- **Authentication** — Bearer token in the `Authorization` header. Requests
+  without a valid token are rejected with 401.
+- **Tier enforcement** — Free-tier requests are rejected with 403. Only
+  Pro and Team tiers are permitted.
+- **Rate limiting** — per-tenant sliding-window rate limiter prevents abuse.
+- **Upstream credentials** — OpenAI and Anthropic API keys are read from
+  environment variables, never logged or persisted.
+- **No content logging** — prompt content and response content are never
+  stored or logged. Only metadata (model name, status code, latency) is
+  recorded for billing purposes.
+
 ## Design Principles
 
 - All data is local-first. Nothing leaves the machine without explicit opt-in.
 - Unix socket IPC is the default; TCP listener requires opt-in configuration.
 - No root/sudo required. Runs as the current user.
-- Cloud API keys are read from environment variables, never persisted to disk
-  by the daemon.
+- Cloud API keys may be stored in the user's config file (`config.toml`,
+  mode 0600) by `sigilctl auth login`, or read from environment variables.
+  The daemon reads but never writes API keys. Users can clear stored keys
+  by editing `config.toml` directly.
 - Fleet telemetry is anonymized and aggregated before transmission.
