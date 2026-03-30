@@ -16,9 +16,9 @@ func main() {
 
 	err := wails.Run(&options.App{
 		Title:             "Sigil",
-		Width:             420,
+		Width:             480,
 		Height:            680,
-		MinWidth:          360,
+		MinWidth:          400,
 		MinHeight:         480,
 		Assets:            assets,
 		StartHidden:       false,

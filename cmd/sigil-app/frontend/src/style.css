@@ -391,14 +391,27 @@ body {
   display: flex;
   border-top: 1px solid var(--border);
   background: var(--bg-secondary);
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none; /* Firefox */
+  flex-shrink: 0;
+}
+
+.tab-bar::-webkit-scrollbar {
+  display: none;
 }
 
 .tab {
-  flex: 1;
-  padding: 10px 0;
+  flex: 1 1 0%;
+  min-width: 56px;
+  padding: 10px 6px;
   border: none;
   background: transparent;
   color: var(--fg-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
