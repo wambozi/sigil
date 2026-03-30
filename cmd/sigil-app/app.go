@@ -160,12 +160,12 @@ func (a *App) startSubscription(ctx context.Context) {
 			continue
 		}
 
-		// Connection succeeded — reset backoff.
+		// Connection succeeded — reset backoff, but don't mark
+		// connected until subscribe handshake completes.
 		delay = time.Second
 		a.mu.Lock()
 		a.subConn = conn
 		a.mu.Unlock()
-		a.setConnected(true)
 
 		// Send subscribe request.
 		req := socket.Request{Method: "subscribe"}
@@ -177,8 +177,18 @@ func (a *App) startSubscription(ctx context.Context) {
 			continue
 		}
 
-		// Read push events until disconnect.
+		// Read the first line (subscribe ack) to confirm daemon is live.
 		scanner := bufio.NewScanner(conn)
+		if !scanner.Scan() {
+			a.log.Debug("subscription: no ack from daemon")
+			conn.Close()
+			a.setConnected(false)
+			continue
+		}
+		a.handlePushLine(scanner.Text())
+		a.setConnected(true)
+
+		// Read push events until disconnect.
 		for scanner.Scan() {
 			select {
 			case <-ctx.Done():

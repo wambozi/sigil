@@ -18,6 +18,7 @@ declare const window: Window & {
     main: {
       App: {
         GetSuggestions(): Promise<any[]>;
+        GetStatus(): Promise<any>;
         IsConnected(): Promise<boolean>;
         GetCurrentTask(): Promise<any>;
         CheckInit(): Promise<{ initialized: boolean; config_path: string }>;
@@ -85,8 +86,11 @@ export function App() {
         // If daemon unreachable, still show normal UI (user may start daemon later).
       });
 
-    // Initial data fetch.
-    window.go.main.App.IsConnected().then(setConnected).catch(() => {});
+    // Initial data fetch — verify daemon is actually responsive, not just
+    // that the socket file exists.
+    window.go.main.App.GetStatus()
+      .then(() => setConnected(true))
+      .catch(() => setConnected(false));
     fetchSuggestions();
     fetchTask();
 
