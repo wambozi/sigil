@@ -17,6 +17,7 @@ Sigil observes your workflow at the metadata level — never the content:
 | **Process names** | Names of running processes (e.g., `nvim`, `go`, `docker`) — not arguments or environment variables |
 | **Window focus** | Active window title and app name on Hyprland — not window contents or input |
 | **AI interactions** | Query category, routing (local/cloud), and latency — not query text unless you enable logging |
+| **Clipboard changes** | Content MIME type, byte length, and source application — never the actual clipboard content |
 
 All records include a timestamp and are stored in a local SQLite database.
 
@@ -27,7 +28,7 @@ All records include a timestamp and are stored in a local SQLite database.
 - **File contents** — Sigil never reads or stores the text inside your files
 - **Keystrokes** — No keystroke logger is present
 - **Screen capture** — No screenshots or screen recordings
-- **Clipboard** — The clipboard is never accessed
+- **Clipboard content** — Only the MIME type and byte length are recorded, never the actual copied text or data
 - **Command arguments** — For privacy, only the base command name is recorded by the process monitor (terminal commands capture the full string you typed, but only what your shell sends)
 - **Environment variables** — `.env` files and shell environment are never read
 
@@ -153,6 +154,23 @@ Local events (file paths, cmds, git)
 The inference engine is configured at `~/.config/sigil/config.toml`. By
 default both backends are disabled. If you enable the cloud backend, only
 the aggregated summary described above is sent.
+
+---
+
+## Cloud LLM Proxy (Pro/Team tiers)
+
+When using the cloud LLM proxy service (`cloud/llm-proxy`), inference
+requests are forwarded to upstream providers (OpenAI or Anthropic). The
+proxy itself:
+
+- **Does not log or store** prompt content or response content
+- **Logs only metadata** for billing: tenant identifier, model name, HTTP
+  status code, and response latency
+- **Does not persist** any data beyond structured log output
+
+The same privacy guarantees described in "What the LLM receives" above
+apply: sigild sends only aggregated counts and pattern labels to the
+inference engine, not raw file paths or command strings.
 
 ---
 

@@ -11,6 +11,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"flag"
@@ -23,6 +24,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/wambozi/sigil/plugins/internal/pluginutil"
 )
 
 const (
@@ -44,6 +47,7 @@ var (
 	jiraURL      string
 	jiraEmail    string
 	jiraToken    string
+	health       = pluginutil.NewHealthServer()
 )
 
 func main() {
@@ -64,6 +68,8 @@ func main() {
 	jiraURL = strings.TrimRight(jiraURL, "/")
 
 	fmt.Fprintf(os.Stderr, "sigil-plugin-jira: polling %s every %s\n", jiraURL, pollInterval)
+
+	go health.ServeHealth(7782)
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGTERM, syscall.SIGINT)
@@ -383,26 +389,57 @@ func fetchActiveSprint() {
 // --- Helpers ---
 
 func jiraGet(endpoint string) ([]byte, error) {
-	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	var body []byte
+	err := pluginutil.RetryDo(context.Background(), 3, 30*time.Second, func() error {
+		req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+		if err != nil {
+			return err
+		}
+		// Basic auth: email:token base64-encoded.
+		auth := base64.StdEncoding.EncodeToString([]byte(jiraEmail + ":" + jiraToken))
+		req.Header.Set("Authorization", "Basic "+auth)
+		req.Header.Set("Accept", "application/json")
+
+		client := &http.Client{Timeout: 15 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			health.RecordError()
+			return err
+		}
+		defer resp.Body.Close()
+
+		// Handle 401 Unauthorized: degrade instead of crashing.
+		if resp.StatusCode == http.StatusUnauthorized {
+			health.SetDegraded()
+			health.RecordError()
+			fmt.Fprintf(os.Stderr, "sigil-plugin-jira: 401 unauthorized — credentials may be expired\n")
+			// Don't retry auth failures.
+			return nil
+		}
+
+		// Retry on 5xx server errors.
+		if resp.StatusCode >= 500 {
+			health.RecordError()
+			return fmt.Errorf("jira API %d for %s", resp.StatusCode, endpoint)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			health.RecordError()
+			return nil // Non-retryable client error; stop retrying.
+		}
+
+		body, err = io.ReadAll(resp.Body)
+		if err != nil {
+			health.RecordError()
+			return err
+		}
+		health.RecordSuccess()
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	// Basic auth: email:token base64-encoded.
-	auth := base64.StdEncoding.EncodeToString([]byte(jiraEmail + ":" + jiraToken))
-	req.Header.Set("Authorization", "Basic "+auth)
-	req.Header.Set("Accept", "application/json")
-
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("jira API %d for %s", resp.StatusCode, endpoint)
-	}
-	return io.ReadAll(resp.Body)
+	return body, nil
 }
 
 func send(event PluginEvent) {

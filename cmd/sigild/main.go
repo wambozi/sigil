@@ -63,6 +63,7 @@ func main() {
 	}
 
 	cfg := parseFlags()
+	applyTierDefaults(cfg.fileCfg)
 
 	log := newLogger(cfg.logLevel)
 	log.Info("sigild starting", "version", "0.1.0-dev")
@@ -163,6 +164,29 @@ func parseAnalyzeEvery(cfg *config.Config) time.Duration {
 		return time.Hour
 	}
 	return d
+}
+
+// applyTierDefaults sets sensible defaults based on the cloud tier.
+// Tiers set defaults, not hard limits — explicit user settings are preserved.
+func applyTierDefaults(cfg *config.Config) {
+	switch cfg.Cloud.Tier {
+	case "", "free":
+		// Free tier: all defaults are local (already the case).
+	case "pro":
+		if cfg.Inference.Mode == "" {
+			cfg.Inference.Mode = "remotefirst"
+		}
+	case "team":
+		if cfg.Inference.Mode == "" {
+			cfg.Inference.Mode = "remotefirst"
+		}
+		if cfg.CloudSync.Enabled == nil {
+			t := true
+			cfg.CloudSync.Enabled = &t
+		}
+	default:
+		slog.Warn("unrecognized cloud tier, using free-tier defaults", "tier", cfg.Cloud.Tier)
+	}
 }
 
 // --- Runtime ----------------------------------------------------------------
@@ -691,6 +715,36 @@ func countEventsToday(ctx context.Context, db *store.Store, log *slog.Logger) in
 	return n
 }
 
+// summarizeEvent produces a short human-readable summary from an event's payload.
+func summarizeEvent(e event.Event) string {
+	switch e.Kind {
+	case event.KindTerminal:
+		if cmd, ok := e.Payload["cmd"].(string); ok {
+			return cmd
+		}
+	case event.KindFile:
+		if path, ok := e.Payload["path"].(string); ok {
+			return path
+		}
+	case event.KindGit:
+		if msg, ok := e.Payload["message"].(string); ok {
+			return msg
+		}
+		if action, ok := e.Payload["action"].(string); ok {
+			return action
+		}
+	case event.KindProcess:
+		if name, ok := e.Payload["name"].(string); ok {
+			return name
+		}
+	case event.KindHyprland:
+		if title, ok := e.Payload["title"].(string); ok {
+			return title
+		}
+	}
+	return string(e.Kind) + " event"
+}
+
 // registerHandlers wires all socket methods to their implementations.
 // Each handler runs in a per-connection goroutine; all store calls must be
 // context-aware so they respect connection-level cancellation.
@@ -719,6 +773,9 @@ func registerHandlers(
 			"current_keybinding_profile": currentProfile.Load(),
 			"uptime_seconds":             int64(time.Since(startTime).Seconds()),
 			"events_today":               countEventsToday(ctx, db, log),
+			"analysis_interval":          cfg.analyzeEvery.String(),
+			"routing_mode":               cfg.inferenceMode,
+			"active_sources":             []string{"file", "process", "git", "terminal", "hyprland"},
 		}
 		if ntf.Level() == notifier.LevelDigest {
 			if ns := nextDigest.Load(); ns > 0 {
@@ -731,6 +788,40 @@ func registerHandlers(
 		}
 	})
 
+	// metrics — process-level resource metrics for the panel.
+	srv.Handle("metrics", func(_ context.Context, _ socket.Request) socket.Response {
+		pid := os.Getpid()
+		sigildRSS, _ := socket.ProcRSS(pid)
+		result := map[string]any{
+			"sigild_pid":       pid,
+			"sigild_rss_bytes": sigildRSS,
+		}
+
+		llamaPID, managed, ok := engine.LocalProcessInfo()
+		llamaInfo := map[string]any{
+			"active":  ok,
+			"managed": managed,
+		}
+		if ok {
+			llamaInfo["pid"] = llamaPID
+			if rss, err := socket.ProcRSS(llamaPID); err == nil {
+				llamaInfo["rss_bytes"] = rss
+			}
+			if cpu, err := socket.ProcCPUPercent(llamaPID); err == nil {
+				llamaInfo["cpu_pct"] = cpu
+			}
+			llamaInfo["model_name"] = engine.LocalModelName()
+			llamaInfo["context_tokens_max"] = engine.LocalCtxSize()
+			// context_tokens_used would require querying llama-server /slots;
+			// omitted for now — the panel can show max only.
+			llamaInfo["context_tokens_used"] = 0
+		}
+		result["llama_server"] = llamaInfo
+		return socket.Response{OK: true, Payload: socket.MarshalPayload(result)}
+	})
+
+	// events — return events from the store with optional pagination and filtering.
+	// When called with no payload, returns recent 50 (backward compatible).
 	// shutdown — graceful daemon shutdown triggered by sigilctl stop.
 	srv.Handle("shutdown", func(_ context.Context, _ socket.Request) socket.Response {
 		log.Info("shutdown requested via socket")
@@ -740,11 +831,118 @@ func registerHandlers(
 
 	// events — return recent events from the store.
 	srv.Handle("events", func(ctx context.Context, req socket.Request) socket.Response {
-		events, err := db.QueryEvents(ctx, "", 50)
+		if len(req.Payload) == 0 || string(req.Payload) == "null" {
+			// Backward compatible: return recent 50.
+			events, err := db.QueryEvents(ctx, "", 50)
+			if err != nil {
+				return socket.Response{Error: err.Error()}
+			}
+			return socket.Response{OK: true, Payload: socket.MarshalPayload(events)}
+		}
+
+		var params struct {
+			Source string `json:"source"`
+			After  int64  `json:"after"`
+			Before int64  `json:"before"`
+			Limit  int    `json:"limit"`
+			Offset int    `json:"offset"`
+		}
+		if err := json.Unmarshal(req.Payload, &params); err != nil {
+			return socket.Response{Error: fmt.Sprintf("events: invalid payload: %s", err)}
+		}
+
+		filter := store.EventFilter{
+			Kind:   event.Kind(params.Source),
+			After:  params.After,
+			Before: params.Before,
+			Limit:  params.Limit,
+			Offset: params.Offset,
+		}
+
+		events, total, err := db.QueryEventsPaginated(ctx, filter)
 		if err != nil {
 			return socket.Response{Error: err.Error()}
 		}
-		return socket.Response{OK: true, Payload: socket.MarshalPayload(events)}
+
+		type eventSummary struct {
+			ID         int64      `json:"id"`
+			Kind       event.Kind `json:"kind"`
+			Source     string     `json:"source"`
+			Summary    string     `json:"summary"`
+			Timestamp  int64      `json:"timestamp"`
+			HasDetails bool       `json:"has_details"`
+		}
+		summaries := make([]eventSummary, 0, len(events))
+		for _, e := range events {
+			summary := summarizeEvent(e)
+			summaries = append(summaries, eventSummary{
+				ID:         e.ID,
+				Kind:       e.Kind,
+				Source:     e.Source,
+				Summary:    summary,
+				Timestamp:  e.Timestamp.UnixMilli(),
+				HasDetails: len(e.Payload) > 0,
+			})
+		}
+		return socket.Response{OK: true, Payload: socket.MarshalPayload(map[string]any{
+			"events": summaries,
+			"total":  total,
+			"limit":  filter.Limit,
+			"offset": filter.Offset,
+		})}
+	})
+
+	// event-detail — return a single event with full payload.
+	srv.Handle("event-detail", func(ctx context.Context, req socket.Request) socket.Response {
+		var params struct {
+			ID int64 `json:"id"`
+		}
+		if err := json.Unmarshal(req.Payload, &params); err != nil {
+			return socket.Response{Error: fmt.Sprintf("event-detail: invalid payload: %s", err)}
+		}
+		e, err := db.QueryEventByID(ctx, params.ID)
+		if err != nil {
+			return socket.Response{Error: fmt.Sprintf("event-detail: %s", err)}
+		}
+		return socket.Response{OK: true, Payload: socket.MarshalPayload(map[string]any{
+			"id":        e.ID,
+			"kind":      e.Kind,
+			"source":    e.Source,
+			"payload":   e.Payload,
+			"timestamp": e.Timestamp.UnixMilli(),
+		})}
+	})
+
+	// purge-events — selectively delete events by IDs or filter.
+	srv.Handle("purge-events", func(ctx context.Context, req socket.Request) socket.Response {
+		var params struct {
+			IDs    []int64 `json:"ids"`
+			Source string  `json:"source"`
+			Before int64   `json:"before"`
+			After  int64   `json:"after"`
+		}
+		if err := json.Unmarshal(req.Payload, &params); err != nil {
+			return socket.Response{Error: fmt.Sprintf("purge-events: invalid payload: %s", err)}
+		}
+
+		var deleted int
+		var err error
+		if len(params.IDs) > 0 {
+			deleted, err = db.DeleteEvents(ctx, params.IDs)
+			log.Info("events purged by IDs", "count", deleted, "ids_requested", len(params.IDs))
+		} else {
+			filter := store.EventFilter{
+				Kind:   event.Kind(params.Source),
+				Before: params.Before,
+				After:  params.After,
+			}
+			deleted, err = db.DeleteEventsFiltered(ctx, filter)
+			log.Info("events purged by filter", "count", deleted, "source", params.Source, "before", params.Before, "after", params.After)
+		}
+		if err != nil {
+			return socket.Response{Error: fmt.Sprintf("purge-events: %s", err)}
+		}
+		return socket.Response{OK: true, Payload: socket.MarshalPayload(map[string]any{"deleted": deleted})}
 	})
 
 	// suggestions — return recent suggestions from the store.

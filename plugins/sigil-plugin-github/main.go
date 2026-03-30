@@ -20,9 +20,12 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/wambozi/sigil/plugins/internal/pluginutil"
 )
 
 const (
@@ -53,6 +56,7 @@ var (
 	pollInterval time.Duration
 	token        string
 	watchDirs    string
+	health       = pluginutil.NewHealthServer()
 )
 
 func main() {
@@ -89,6 +93,8 @@ func main() {
 	}
 
 	fmt.Fprintf(os.Stderr, "sigil-plugin-github: polling every %s\n", pollInterval)
+
+	go health.ServeHealth(7781)
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGTERM, syscall.SIGINT)
@@ -646,14 +652,47 @@ func ghGet(url string) ([]byte, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
+		health.RecordError()
 		return nil, err
 	}
 	defer resp.Body.Close()
 
+	// Handle rate limiting: if remaining < 100, sleep until reset.
+	if remaining := resp.Header.Get("X-RateLimit-Remaining"); remaining != "" {
+		if rem, err := strconv.Atoi(remaining); err == nil && rem < 100 {
+			if resetStr := resp.Header.Get("X-RateLimit-Reset"); resetStr != "" {
+				if resetUnix, err := strconv.ParseInt(resetStr, 10, 64); err == nil {
+					sleepDur := time.Until(time.Unix(resetUnix, 0))
+					if sleepDur > 0 {
+						fmt.Fprintf(os.Stderr, "sigil-plugin-github: rate limit low (%d remaining), sleeping %s\n", rem, sleepDur)
+						health.SetDegraded()
+						time.Sleep(sleepDur)
+					}
+				}
+			}
+		}
+	}
+
+	// Handle 401 Unauthorized: degrade instead of crashing.
+	if resp.StatusCode == http.StatusUnauthorized {
+		health.SetDegraded()
+		health.RecordError()
+		fmt.Fprintf(os.Stderr, "sigil-plugin-github: 401 unauthorized — token may be expired\n")
+		return nil, fmt.Errorf("github API 401 unauthorized for %s", url)
+	}
+
 	if resp.StatusCode != http.StatusOK {
+		health.RecordError()
 		return nil, fmt.Errorf("github API %d for %s", resp.StatusCode, url)
 	}
-	return io.ReadAll(resp.Body)
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		health.RecordError()
+		return nil, err
+	}
+	health.RecordSuccess()
+	return body, nil
 }
 
 func send(event PluginEvent) {

@@ -632,6 +632,85 @@ func TestEngineClose_stoppableLocalBackend(t *testing.T) {
 	assert.True(t, sb.stopped, "expected Stop to be called on the local backend")
 }
 
+// mockLocalInfoBackend satisfies Backend and localInfoProvider for testing Engine accessors.
+type mockLocalInfoBackend struct {
+	stoppableBackend
+	pid     int
+	managed bool
+	ok      bool
+	model   string
+	ctxSize int
+}
+
+func (m *mockLocalInfoBackend) ProcessInfo() (int, bool, bool) {
+	return m.pid, m.managed, m.ok
+}
+
+func (m *mockLocalInfoBackend) ModelName() string { return m.model }
+
+func (m *mockLocalInfoBackend) CtxSize() int { return m.ctxSize }
+
+func TestEngineLocalProcessInfo_withLocalBackend(t *testing.T) {
+	lb := &mockLocalInfoBackend{pid: 1234, managed: true, ok: true}
+	engine := &Engine{local: lb, mode: RouteLocal, log: testLogger()}
+
+	pid, managed, ok := engine.LocalProcessInfo()
+	assert.Equal(t, 1234, pid)
+	assert.True(t, managed)
+	assert.True(t, ok)
+}
+
+func TestEngineLocalProcessInfo_noProcess(t *testing.T) {
+	lb := &mockLocalInfoBackend{pid: 0, managed: false, ok: false}
+	engine := &Engine{local: lb, mode: RouteLocal, log: testLogger()}
+
+	pid, managed, ok := engine.LocalProcessInfo()
+	assert.Equal(t, 0, pid)
+	assert.False(t, managed)
+	assert.False(t, ok)
+}
+
+func TestEngineLocalProcessInfo_nilLocalBackend(t *testing.T) {
+	engine := &Engine{local: nil, mode: RouteRemote, log: testLogger()}
+
+	pid, managed, ok := engine.LocalProcessInfo()
+	assert.Equal(t, 0, pid)
+	assert.False(t, managed)
+	assert.False(t, ok)
+}
+
+func TestEngineLocalProcessInfo_nonInfoBackend(t *testing.T) {
+	// A Backend that doesn't implement localInfoProvider.
+	engine := &Engine{local: &stoppableBackend{}, mode: RouteLocal, log: testLogger()}
+
+	pid, managed, ok := engine.LocalProcessInfo()
+	assert.Equal(t, 0, pid)
+	assert.False(t, managed)
+	assert.False(t, ok)
+}
+
+func TestEngineLocalModelName(t *testing.T) {
+	lb := &mockLocalInfoBackend{model: "qwen2.5-1.5b-q4_k_m"}
+	engine := &Engine{local: lb, mode: RouteLocal, log: testLogger()}
+	assert.Equal(t, "qwen2.5-1.5b-q4_k_m", engine.LocalModelName())
+}
+
+func TestEngineLocalModelName_nilBackend(t *testing.T) {
+	engine := &Engine{local: nil, mode: RouteRemote, log: testLogger()}
+	assert.Equal(t, "", engine.LocalModelName())
+}
+
+func TestEngineLocalCtxSize(t *testing.T) {
+	lb := &mockLocalInfoBackend{ctxSize: 8192}
+	engine := &Engine{local: lb, mode: RouteLocal, log: testLogger()}
+	assert.Equal(t, 8192, engine.LocalCtxSize())
+}
+
+func TestEngineLocalCtxSize_nilBackend(t *testing.T) {
+	engine := &Engine{local: nil, mode: RouteRemote, log: testLogger()}
+	assert.Equal(t, 0, engine.LocalCtxSize())
+}
+
 func TestEngineClose_nonStoppableLocalBackend(t *testing.T) {
 	// A local backend that only satisfies Backend (not Stoppable) must not
 	// cause Close to error — the type assertion is a no-op.
