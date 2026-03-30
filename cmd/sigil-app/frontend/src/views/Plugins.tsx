@@ -147,7 +147,8 @@ export function Plugins() {
               enabled={p.enabled}
               running={p.running}
               healthy={p.healthy}
-              onToggle={(enabled) => handleToggle(p.name, enabled)}
+              daemon={p.daemon}
+              onToggle={(enabled: boolean) => handleToggle(p.name, enabled)}
             />
           ))}
         </div>

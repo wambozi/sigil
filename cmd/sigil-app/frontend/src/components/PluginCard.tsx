@@ -7,13 +7,16 @@ interface PluginCardProps {
   enabled?: boolean;
   running?: boolean;
   healthy?: boolean;
+  daemon?: boolean;
   onToggle?: (enabled: boolean) => void;
   onInstall?: () => void;
   installing?: boolean;
 }
 
 export function PluginCard(props: PluginCardProps) {
-  const { name, description, version, category, installed, enabled, running, healthy, onToggle, onInstall, installing } = props;
+  const { name, description, version, category, installed, enabled, running, healthy, daemon, onToggle, onInstall, installing } = props;
+
+  const isHookOnly = installed && enabled && daemon === false;
 
   return (
     <div class="plugin-card">
@@ -42,12 +45,27 @@ export function PluginCard(props: PluginCardProps) {
         <p class="plugin-description">{description}</p>
         {installed && (
           <div class="plugin-status-row">
-            <span class={`status-dot ${running ? 'running' : 'stopped'}`} />
-            <span>{running ? 'Running' : 'Stopped'}</span>
-            {running && (
+            {isHookOnly ? (
               <>
+                <span class="status-dot hook-only" />
+                <span>Hook-only (runs on demand)</span>
+              </>
+            ) : running ? (
+              <>
+                <span class="status-dot running" />
+                <span>Running</span>
                 <span class={`status-dot ${healthy ? 'healthy' : 'unhealthy'}`} />
                 <span>{healthy ? 'Healthy' : 'Unhealthy'}</span>
+              </>
+            ) : enabled ? (
+              <>
+                <span class="status-dot stopped" />
+                <span>Stopped</span>
+              </>
+            ) : (
+              <>
+                <span class="status-dot disabled" />
+                <span>Disabled</span>
               </>
             )}
           </div>

@@ -447,10 +447,129 @@ body {
 
 .summary-view {
   padding: 16px;
+  overflow-y: auto;
+  height: 100%;
 }
 
+/* Current Task Card */
+.summary-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-bottom: 16px;
+  background: var(--card-bg);
+  box-shadow: var(--card-shadow);
+}
+
+.summary-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.summary-card-icon {
+  font-size: 14px;
+}
+
+.summary-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.phase-badge {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.phase-editing { background: rgba(0, 113, 227, 0.15); color: var(--accent); }
+.phase-verifying { background: rgba(52, 199, 89, 0.15); color: var(--success); }
+.phase-completing { background: rgba(175, 82, 222, 0.15); color: #af52de; }
+.phase-blocked, .phase-stuck { background: rgba(255, 59, 48, 0.15); color: var(--danger); }
+.phase-unknown, .phase-idle { background: rgba(134, 134, 139, 0.15); color: var(--fg-secondary); }
+
+.current-task-details {
+  font-size: 13px;
+}
+
+.task-repo {
+  font-weight: 500;
+  color: var(--fg);
+  margin-bottom: 2px;
+}
+
+.task-branch {
+  color: var(--accent);
+  font-family: "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.task-meta {
+  display: flex;
+  gap: 12px;
+  color: var(--fg-secondary);
+  font-size: 12px;
+}
+
+/* Stats Grid */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.stat-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 8px;
+  text-align: center;
+  background: var(--card-bg);
+}
+
+.stat-card.stat-warn {
+  border-color: var(--danger);
+}
+
+.stat-icon {
+  font-size: 18px;
+  margin-bottom: 4px;
+}
+
+.stat-value {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--fg);
+  margin-bottom: 2px;
+}
+
+.stat-warn .stat-value {
+  color: var(--danger);
+}
+
+.stat-label {
+  font-size: 11px;
+  color: var(--fg-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+/* Summary Sections */
 .summary-section {
-  margin-bottom: 20px;
+  margin-bottom: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.summary-section:first-of-type {
+  border-top: none;
+  padding-top: 0;
 }
 
 .summary-section-title {
@@ -462,22 +581,63 @@ body {
   margin-bottom: 8px;
 }
 
-.summary-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 0;
+.summary-repo-item {
+  padding: 6px 0;
+  font-size: 13px;
+  color: var(--fg);
+  font-family: "SF Mono", Menlo, monospace;
   border-bottom: 1px solid var(--border);
-  font-size: 14px;
 }
 
-.summary-item:last-child {
+.summary-repo-item:last-child {
   border-bottom: none;
 }
 
-.summary-value {
+.summary-task-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.summary-task-item:last-child {
+  border-bottom: none;
+}
+
+.task-name {
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  margin-right: 8px;
+}
+
+.task-duration {
   font-weight: 500;
   color: var(--accent);
+  flex-shrink: 0;
+}
+
+/* Footer */
+.summary-footer {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.summary-footer-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--fg-secondary);
+}
+
+.summary-refresh {
+  display: flex;
+  justify-content: center;
+  padding: 12px 0 4px;
 }
 
 /* --- Ask Sigil ----------------------------------------------------------- */
@@ -878,6 +1038,14 @@ body {
 .status-dot.stopped,
 .status-dot.unhealthy {
   background: var(--danger);
+}
+
+.status-dot.hook-only {
+  background: var(--accent);
+}
+
+.status-dot.disabled {
+  background: var(--fg-secondary);
 }
 
 /* --- Install Button ------------------------------------------------------ */

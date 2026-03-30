@@ -207,6 +207,7 @@ func (m *Manager) Plugins() []PluginStatus {
 			Enabled: inst.Config.Enabled,
 			Running: inst.proc != nil,
 			Healthy: inst.healthy,
+			Daemon:  inst.Config.Daemon,
 		}
 		if inst.proc != nil {
 			status.PID = inst.proc.Pid
@@ -223,6 +224,7 @@ type PluginStatus struct {
 	Enabled bool   `json:"enabled"`
 	Running bool   `json:"running"`
 	Healthy bool   `json:"healthy"`
+	Daemon  bool   `json:"daemon"`
 	PID     int    `json:"pid,omitempty"`
 }
 
