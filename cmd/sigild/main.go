@@ -48,6 +48,7 @@ import (
 	"github.com/wambozi/sigil/internal/notifier"
 	"github.com/wambozi/sigil/internal/plugin"
 	"github.com/wambozi/sigil/internal/socket"
+	siglogging "github.com/wambozi/sigil/internal/logging"
 	"github.com/wambozi/sigil/internal/store"
 	"github.com/wambozi/sigil/internal/task"
 )
@@ -603,6 +604,9 @@ func run(cfg daemonConfig, log *slog.Logger) error {
 		if incoming.Daemon.SocketPath != "" {
 			merged.Daemon.SocketPath = incoming.Daemon.SocketPath
 		}
+		if incoming.Daemon.ActuationsEnabled != nil {
+			merged.Daemon.ActuationsEnabled = incoming.Daemon.ActuationsEnabled
+		}
 		if incoming.Notifier.Level != nil {
 			merged.Notifier.Level = incoming.Notifier.Level
 		}
@@ -612,6 +616,11 @@ func run(cfg daemonConfig, log *slog.Logger) error {
 		if incoming.Inference.Mode != "" {
 			merged.Inference.Mode = incoming.Inference.Mode
 		}
+		merged.Inference.Local.Enabled = incoming.Inference.Local.Enabled
+		if incoming.Inference.Local.ServerURL != "" {
+			merged.Inference.Local.ServerURL = incoming.Inference.Local.ServerURL
+		}
+		merged.Inference.Cloud.Enabled = incoming.Inference.Cloud.Enabled
 		if incoming.Inference.Cloud.APIKey != "" {
 			merged.Inference.Cloud.APIKey = incoming.Inference.Cloud.APIKey
 		}
@@ -627,6 +636,20 @@ func run(cfg daemonConfig, log *slog.Logger) error {
 		if incoming.Retention.RawEventDays != 0 {
 			merged.Retention.RawEventDays = incoming.Retention.RawEventDays
 		}
+		if incoming.ML.Mode != "" {
+			merged.ML.Mode = incoming.ML.Mode
+		}
+		merged.ML.Local.Enabled = incoming.ML.Local.Enabled
+		if incoming.ML.Local.ServerURL != "" {
+			merged.ML.Local.ServerURL = incoming.ML.Local.ServerURL
+		}
+		merged.ML.Cloud.Enabled = incoming.ML.Cloud.Enabled
+		if incoming.ML.Cloud.APIKey != "" {
+			merged.ML.Cloud.APIKey = incoming.ML.Cloud.APIKey
+		}
+		// Fleet: always copy Enabled since the frontend sends the full
+		// fleet object. A zero-value Endpoint means "keep existing".
+		merged.Fleet.Enabled = incoming.Fleet.Enabled
 		if incoming.Fleet.Endpoint != "" {
 			merged.Fleet.Endpoint = incoming.Fleet.Endpoint
 		}
@@ -1449,13 +1472,16 @@ func registerHandlers(
 		return socket.Response{OK: true, Payload: socket.MarshalPayload(map[string]any{"ok": true})}
 	})
 
-	// config — return the resolved runtime configuration as JSON.
+	// config — return the current configuration as JSON.
+	// Loads from disk to pick up any changes made by set-config.
 	// Sensitive fields (API keys / tokens) are masked.
 	srv.Handle("config", func(ctx context.Context, _ socket.Request) socket.Response {
-		// Deep-copy the file config so masking doesn't affect in-memory state.
-		snapshot := *cfg.fileCfg
+		snapshot, err := config.Load(cfg.configPath)
+		if err != nil {
+			return socket.Response{Error: fmt.Sprintf("load config: %v", err)}
+		}
 
-		// Apply runtime overrides that came from flags.
+		// Apply runtime overrides from flags for fields not in the file.
 		if snapshot.Daemon.LogLevel == "" {
 			snapshot.Daemon.LogLevel = cfg.logLevel
 		}
@@ -2040,18 +2066,7 @@ func cmdInit() error {
 // --- Helpers ----------------------------------------------------------------
 
 func newLogger(level string) *slog.Logger {
-	var lvl slog.Level
-	switch strings.ToLower(level) {
-	case "debug":
-		lvl = slog.LevelDebug
-	case "warn":
-		lvl = slog.LevelWarn
-	case "error":
-		lvl = slog.LevelError
-	default:
-		lvl = slog.LevelInfo
-	}
-	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: lvl}))
+	return siglogging.New("sigild", level)
 }
 
 func defaultDBPath() string {
