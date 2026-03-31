@@ -5,6 +5,7 @@ declare const window: Window & {
     main: {
       App: {
         RunInit(config: any): Promise<void>;
+        CloudSignIn(): Promise<void>;
         DetectEnvironment(): Promise<{
           ides: string[];
           tools: string[];
@@ -84,6 +85,16 @@ export function Wizard({ onComplete }: { onComplete: () => void }) {
     setError(null);
     try {
       await window.go.main.App.RunInit(config);
+
+      // If user chose cloud sign-in, open the OAuth flow after init.
+      if (config.cloud_enabled) {
+        try {
+          await window.go.main.App.CloudSignIn();
+        } catch {
+          // User closed browser or timed out — not a fatal error.
+        }
+      }
+
       onComplete();
     } catch {
       setError("Failed to save configuration. Is the daemon running?");
@@ -388,64 +399,51 @@ export function Wizard({ onComplete }: { onComplete: () => void }) {
           <div class="wizard-step">
             <h2>Sigil Cloud</h2>
             <p class="wizard-desc">
-              Optionally connect to Sigil Cloud for team insights and cloud AI.
-              You can set this up later.
+              Sign in to unlock cloud AI, team insights, and cross-device sync.
+              Everything works offline without an account — you can always sign
+              in later from Settings.
             </p>
             <div class="wizard-options">
-              <label class="wizard-checkbox">
+              <label class="wizard-radio">
                 <input
-                  type="checkbox"
-                  checked={config.fleet_enabled}
-                  onChange={(e) =>
-                    update(
-                      "fleet_enabled",
-                      (e.target as HTMLInputElement).checked
-                    )
-                  }
+                  type="radio"
+                  name="cloud_choice"
+                  checked={!config.cloud_enabled}
+                  onChange={() => {
+                    update("cloud_enabled", false);
+                    update("fleet_enabled", false);
+                  }}
                 />
                 <div>
-                  <div class="wizard-radio-title">Enable Team Insights</div>
+                  <div class="wizard-radio-title">Skip for now</div>
                   <div class="wizard-radio-desc">
-                    Share anonymized aggregate metrics with your team. No raw
-                    data leaves your machine.
+                    Use Sigil fully offline. All features work locally. You can
+                    sign in anytime from Settings.
+                  </div>
+                </div>
+              </label>
+              <label class="wizard-radio">
+                <input
+                  type="radio"
+                  name="cloud_choice"
+                  checked={config.cloud_enabled}
+                  onChange={() => update("cloud_enabled", true)}
+                />
+                <div>
+                  <div class="wizard-radio-title">Sign in to Sigil Cloud</div>
+                  <div class="wizard-radio-desc">
+                    Opens your browser to sign in with email or SSO. Your
+                    account tier (Free, Pro, Team) determines available features.
+                    No API keys needed.
                   </div>
                 </div>
               </label>
             </div>
             {config.cloud_enabled && (
-              <div class="wizard-cloud-fields">
-                <div class="settings-row">
-                  <label class="settings-label">Cloud Provider</label>
-                  <select
-                    class="settings-select"
-                    value={config.cloud_provider}
-                    onChange={(e) =>
-                      update(
-                        "cloud_provider",
-                        (e.target as HTMLSelectElement).value
-                      )
-                    }
-                  >
-                    <option value="">Select...</option>
-                    <option value="anthropic">Anthropic</option>
-                    <option value="openai">OpenAI</option>
-                  </select>
-                </div>
-                <div class="settings-row">
-                  <label class="settings-label">API Key</label>
-                  <input
-                    class="settings-input"
-                    type="password"
-                    value={config.cloud_api_key}
-                    onInput={(e) =>
-                      update(
-                        "cloud_api_key",
-                        (e.target as HTMLInputElement).value
-                      )
-                    }
-                    placeholder="Enter API key..."
-                  />
-                </div>
+              <div class="wizard-cloud-notice">
+                After completing setup, you'll be redirected to sign in via your
+                browser. Your tier and team settings will be configured
+                automatically.
               </div>
             )}
           </div>
@@ -477,8 +475,12 @@ export function Wizard({ onComplete }: { onComplete: () => void }) {
                 </span>
               </div>
               <div class="wizard-summary-row">
-                <span class="wizard-summary-label">Team Insights</span>
-                <span>{config.fleet_enabled ? "Enabled" : "Disabled"}</span>
+                <span class="wizard-summary-label">Sigil Cloud</span>
+                <span>
+                  {config.cloud_enabled
+                    ? "Will sign in after setup"
+                    : "Offline (sign in later from Settings)"}
+                </span>
               </div>
             </div>
             {error && <div class="wizard-error">{error}</div>}

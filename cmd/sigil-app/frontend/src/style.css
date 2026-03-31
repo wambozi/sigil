@@ -1395,6 +1395,16 @@ body {
   gap: 12px;
 }
 
+.wizard-cloud-notice {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: rgba(0, 113, 227, 0.08);
+  color: var(--accent);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .wizard-summary {
   display: flex;
   flex-direction: column;

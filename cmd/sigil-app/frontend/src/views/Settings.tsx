@@ -433,43 +433,19 @@ export function Settings({ onRerunSetup, connected }: { onRerunSetup?: () => voi
             />
           </div>
           <div class="settings-row">
-            <Toggle
-              label="Cloud Enabled"
-              checked={inference.cloud?.enabled ?? false}
-              onChange={(v) => update("inference.cloud.enabled", v)}
-            />
-          </div>
-          <div class="settings-row">
-            <span class="settings-label">Cloud Provider</span>
-            <select
-              class="settings-select"
-              value={inference.cloud?.provider || ""}
-              onChange={(e) =>
-                update(
-                  "inference.cloud.provider",
-                  (e.target as HTMLSelectElement).value
-                )
-              }
-            >
-              <option value="">Select...</option>
-              <option value="anthropic">Anthropic</option>
-              <option value="openai">OpenAI</option>
-            </select>
-          </div>
-          <div class="settings-row">
-            <span class="settings-label">Cloud API Key</span>
-            <input
-              class="settings-input"
-              type="password"
-              value={inference.cloud?.api_key || ""}
-              onInput={(e) =>
-                update(
-                  "inference.cloud.api_key",
-                  (e.target as HTMLInputElement).value
-                )
-              }
-              placeholder="Enter API key..."
-            />
+            <div class="settings-label-group">
+              <span class="settings-label">Cloud Inference</span>
+              <div class="settings-label-sub">
+                Enabled automatically when signed in to Sigil Cloud
+              </div>
+            </div>
+            <div class="toggle-switch">
+              <Toggle
+                label=""
+                checked={inference.cloud?.enabled ?? false}
+                onChange={(v) => update("inference.cloud.enabled", v)}
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -520,26 +496,19 @@ export function Settings({ onRerunSetup, connected }: { onRerunSetup?: () => voi
             />
           </div>
           <div class="settings-row">
-            <Toggle
-              label="Cloud Enabled"
-              checked={ml.cloud?.enabled ?? false}
-              onChange={(v) => update("ml.cloud.enabled", v)}
-            />
-          </div>
-          <div class="settings-row">
-            <span class="settings-label">Cloud API Key</span>
-            <input
-              class="settings-input"
-              type="password"
-              value={ml.cloud?.api_key || ""}
-              onInput={(e) =>
-                update(
-                  "ml.cloud.api_key",
-                  (e.target as HTMLInputElement).value
-                )
-              }
-              placeholder="Enter API key..."
-            />
+            <div class="settings-label-group">
+              <span class="settings-label">Cloud ML</span>
+              <div class="settings-label-sub">
+                Enabled automatically via Sigil Cloud (Pro/Team)
+              </div>
+            </div>
+            <div class="toggle-switch">
+              <Toggle
+                label=""
+                checked={ml.cloud?.enabled ?? false}
+                onChange={(v) => update("ml.cloud.enabled", v)}
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -595,35 +564,28 @@ export function Settings({ onRerunSetup, connected }: { onRerunSetup?: () => voi
         </div>
       </div>
 
-      {/* Fleet */}
+      {/* Fleet / Team Insights */}
       <div class="settings-section">
         <h3>Team Insights</h3>
         <div class="settings-section-desc">
-          Anonymized aggregate metrics shared with your team. No raw data leaves
-          your machine.
+          Anonymized aggregate metrics shared with your team. Requires a Team or
+          Enterprise account. No raw data leaves your machine.
         </div>
         <div class="settings-card">
           <div class="settings-row">
-            <Toggle
-              label="Enabled"
-              checked={fleet.enabled ?? false}
-              onChange={(v) => update("fleet.enabled", v)}
-            />
-          </div>
-          <div class="settings-row">
-            <span class="settings-label">Endpoint</span>
-            <input
-              class="settings-input"
-              type="text"
-              value={fleet.endpoint || ""}
-              onInput={(e) =>
-                update(
-                  "fleet.endpoint",
-                  (e.target as HTMLInputElement).value
-                )
-              }
-              placeholder="https://fleet.example.com"
-            />
+            <div class="settings-label-group">
+              <span class="settings-label">Enabled</span>
+              <div class="settings-label-sub">
+                Auto-configured when signed in with a Team account
+              </div>
+            </div>
+            <div class="toggle-switch">
+              <Toggle
+                label=""
+                checked={fleet.enabled ?? false}
+                onChange={(v) => update("fleet.enabled", v)}
+              />
+            </div>
           </div>
         </div>
       </div>
