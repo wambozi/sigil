@@ -15,6 +15,7 @@ import (
 	"time"
 
 	wailsrt "github.com/wailsapp/wails/v2/pkg/runtime"
+	siglogging "github.com/wambozi/sigil/internal/logging"
 	"github.com/wambozi/sigil/internal/socket"
 )
 
@@ -43,7 +44,7 @@ type App struct {
 // shutdown() at the appropriate lifecycle points.
 func NewApp() *App {
 	return &App{
-		log: slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})),
+		log: siglogging.New("sigil-app", "info"),
 	}
 }
 
