@@ -1270,7 +1270,13 @@ CREATE TABLE IF NOT EXISTS plugin_events (
     ts          INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_plugin_events_plugin ON plugin_events(plugin);
-CREATE INDEX IF NOT EXISTS idx_plugin_events_ts ON plugin_events(ts);`
+CREATE INDEX IF NOT EXISTS idx_plugin_events_ts ON plugin_events(ts);
+
+CREATE TABLE IF NOT EXISTS sync_cursors (
+    table_name     TEXT PRIMARY KEY,
+    last_synced_id INTEGER NOT NULL DEFAULT 0,
+    last_synced_at INTEGER NOT NULL DEFAULT 0
+);`
 
 	_, err := db.Exec(schema)
 	return err
@@ -1281,7 +1287,7 @@ CREATE INDEX IF NOT EXISTS idx_plugin_events_ts ON plugin_events(ts);`
 // Purge deletes all rows from all tables and then removes the SQLite database
 // file from disk.  The Store must not be used after calling Purge.
 func (s *Store) Purge() error {
-	tables := []string{"plugin_events", "ml_predictions", "ml_events", "tasks", "feedback", "suggestions", "patterns", "ai_interactions", "events"}
+	tables := []string{"sync_cursors", "plugin_events", "ml_predictions", "ml_events", "tasks", "feedback", "suggestions", "patterns", "ai_interactions", "events"}
 	for _, t := range tables {
 		if _, err := s.db.Exec("DELETE FROM " + t); err != nil {
 			return fmt.Errorf("store: purge table %s: %w", t, err)

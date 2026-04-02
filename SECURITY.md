@@ -36,6 +36,9 @@ security surface includes:
   to configured API endpoints over HTTPS.
 - **Fleet reporter** — when opted in, sends anonymized aggregate metrics
   to a configured fleet endpoint over HTTPS.
+- **Sync agent** — when opted in, streams local SQLite row data (events,
+  tasks, suggestions, predictions, patterns) to a configured cloud ingest
+  API over HTTPS. Disabled by default.
 
 ## TCP Network Listener (optional)
 
