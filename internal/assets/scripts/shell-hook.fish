@@ -11,10 +11,10 @@ if functions -q _sigild_postexec
     return 0
 end
 
-set -g _SIGILD_SESSION_ID $fish_pid
+set -g _SIGILD_SESSION_ID %self
 
 function _sigild_postexec --on-event fish_postexec
-    set -l _sigild_exit $argv[2]
+    set -l _sigild_exit $status
     set -l _sigild_cmd $argv[1]
 
     # Skip empty commands

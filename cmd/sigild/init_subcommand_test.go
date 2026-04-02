@@ -14,7 +14,7 @@ func TestInstallShellHook(t *testing.T) {
 		wantRCFile     string // relative to home
 		wantHookFile   string // embedded asset name
 		wantSourceLine string
-		wantSkip       bool   // true if shell is unknown
+		wantSkip       bool // true if shell is unknown
 	}{
 		{
 			name:           "zsh",

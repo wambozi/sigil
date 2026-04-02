@@ -1,14 +1,12 @@
-//go:build !darwin
+//go:build !darwin && !linux && !windows
 
 package main
 
 import (
+	"log/slog"
+
 	"github.com/wambozi/sigil/internal/collector"
-	"github.com/wambozi/sigil/internal/collector/sources"
 )
 
-// addPlatformSources registers Linux-specific collector sources.
-// HyprlandSource (registered unconditionally) handles Linux window focus.
-func addPlatformSources(col *collector.Collector) {
-	col.Add(&sources.ClipboardSource{})
-}
+// addPlatformSources is a no-op stub for unsupported platforms.
+func addPlatformSources(_ *collector.Collector, _ *slog.Logger) {}

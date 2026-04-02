@@ -46,11 +46,11 @@ import (
 
 	signsync "github.com/wambozi/sigil/internal/sync"
 
+	siglogging "github.com/wambozi/sigil/internal/logging"
 	"github.com/wambozi/sigil/internal/network"
 	"github.com/wambozi/sigil/internal/notifier"
 	"github.com/wambozi/sigil/internal/plugin"
 	"github.com/wambozi/sigil/internal/socket"
-	siglogging "github.com/wambozi/sigil/internal/logging"
 	"github.com/wambozi/sigil/internal/store"
 	"github.com/wambozi/sigil/internal/task"
 )

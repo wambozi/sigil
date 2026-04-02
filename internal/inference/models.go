@@ -43,7 +43,8 @@ var KnownModels = map[string]ModelSpec{
 
 // ModelsDir returns the directory for cached models.
 // Default: ~/.local/share/sigild/models/ (Linux/macOS)
-//          %LOCALAPPDATA%\sigil\sigild\models\ (Windows)
+//
+//	%LOCALAPPDATA%\sigil\sigild\models\ (Windows)
 func ModelsDir() string {
 	if runtime.GOOS == "windows" {
 		appdata := os.Getenv("LOCALAPPDATA")
