@@ -62,20 +62,36 @@ func runInit() error {
 	watchDirs, repoDirs := setupWatchDirs(reader, home)
 
 	// 3. Inference setup
-	inferenceToml := setupInference(reader)
+	localInference, cloudEnabled, cloudProvider, cloudAPIKey, infMode := setupInferenceValues(reader)
 
 	// 4. ML setup
-	mlToml := setupML(reader)
+	mlEnabled := setupMLEnabled(reader)
 
 	// 5. Plugins setup
-	pluginToml := setupPlugins(reader)
+	_ = setupPlugins(reader) // plugins write their own config sections
 
 	// 6. Fleet setup
-	fleetToml := setupFleet(reader)
+	fleetEnabled := setupFleetEnabled(reader)
 
-	// 7. Config file
-	if err := installConfigFile(watchDirs, repoDirs, inferenceToml, mlToml, pluginToml, fleetToml); err != nil {
-		fmt.Fprintf(os.Stderr, "  [warn] config: %v\n", err)
+	// 7. Config file — same code path as the desktop wizard
+	cfgPath := config.DefaultPath()
+	if _, err := os.Stat(cfgPath); err == nil {
+		fmt.Printf("  [ok]   config already exists at %s\n", cfgPath)
+	} else {
+		payload := initPayload{
+			WatchDirs:      watchDirs,
+			RepoDirs:       repoDirs,
+			InferenceMode:  infMode,
+			LocalInference: localInference,
+			CloudEnabled:   cloudEnabled,
+			CloudProvider:  cloudProvider,
+			CloudAPIKey:    cloudAPIKey,
+			MLEnabled:      mlEnabled,
+			FleetEnabled:   fleetEnabled,
+		}
+		if err := writeInitConfig(payload); err != nil {
+			fmt.Fprintf(os.Stderr, "  [warn] config: %v\n", err)
+		}
 	}
 
 	// 8. Data directory
@@ -121,12 +137,15 @@ func runInitNonInteractive(home string) error {
 		}
 	}
 
-	watchDirs := []string{toTildePath(watchDir, home)}
-	inferenceToml := "[inference]\nmode = \"localfirst\"\n\n[inference.local]\nenabled = false\n\n[inference.cloud]\nenabled = false\n"
-	mlToml := "[ml]\nmode = \"disabled\"\n"
-	fleetToml := "[fleet]\nenabled = false\n"
-
-	if err := installConfigFile(watchDirs, nil, inferenceToml, mlToml, "", fleetToml); err != nil {
+	payload := initPayload{
+		WatchDirs:      []string{toTildePath(watchDir, home)},
+		InferenceMode:  "localfirst",
+		LocalInference: false,
+		CloudEnabled:   false,
+		MLEnabled:      false,
+		FleetEnabled:   false,
+	}
+	if err := writeInitConfig(payload); err != nil {
 		fmt.Fprintf(os.Stderr, "  [warn] config: %v\n", err)
 	}
 
@@ -635,6 +654,93 @@ func setupFleet(reader *bufio.Reader) string {
 	endpoint := promptString(reader, fmt.Sprintf("  Fleet endpoint URL [%s]:", config.DefaultFleetEndpoint), config.DefaultFleetEndpoint)
 
 	return fmt.Sprintf("[fleet]\nenabled = true\nendpoint = %q\n", endpoint)
+}
+
+// setupInferenceValues prompts for inference config and returns structured values
+// (same prompts as setupInference but returns values instead of TOML).
+func setupInferenceValues(reader *bufio.Reader) (localEnabled, cloudEnabled bool, provider, apiKey, mode string) {
+	fmt.Println()
+	fmt.Println("--- Inference Setup ---")
+
+	if promptYN(reader, "Enable local AI inference? (requires ~14GB disk for model) [Y/n]", "y") {
+		localEnabled = true
+		if _, err := exec.LookPath("llama-server"); err != nil {
+			if _, err := exec.LookPath("ollama"); err != nil {
+				fmt.Println("  [info] no local AI server found (llama-server, ollama)")
+				fmt.Println("         Install ollama: brew install ollama")
+			} else {
+				fmt.Println("  [ok]   ollama found in PATH")
+			}
+		} else {
+			fmt.Println("  [ok]   llama-server found in PATH")
+		}
+
+		if promptYN(reader, "Download default model (LFM2-24B-A2B, ~14GB)? [y/N]", "n") {
+			fmt.Println("  Downloading model...")
+			path, err := inference.EnsureModel(context.Background(), inference.DefaultModel, os.Stdout)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "  [warn] model download failed: %v\n", err)
+			} else {
+				fmt.Printf("  [ok]   model cached at %s\n", path)
+			}
+		}
+	}
+
+	if promptYN(reader, "Enable cloud AI fallback? [y/N]", "n") {
+		cloudEnabled = true
+		provider = promptString(reader, "  Cloud provider (anthropic/openai) [anthropic]:", "anthropic")
+		apiKey = promptString(reader, "  API key (or set SIGIL_CLOUD_API_KEY env var) []:", "")
+	}
+
+	switch {
+	case localEnabled && cloudEnabled:
+		mode = "localfirst"
+	case localEnabled:
+		mode = "local"
+	case cloudEnabled:
+		mode = "remote"
+	default:
+		mode = "localfirst"
+	}
+	return
+}
+
+// setupMLEnabled prompts for ML and returns whether it's enabled.
+func setupMLEnabled(reader *bufio.Reader) bool {
+	fmt.Println()
+	fmt.Println("--- ML Predictions ---")
+
+	if !promptYN(reader, "Enable local ML predictions (stuck detection, suggestion timing)? [Y/n]", "y") {
+		return false
+	}
+
+	if _, err := exec.LookPath("sigil-ml"); err != nil {
+		fmt.Println("  [info] sigil-ml not found in PATH")
+		if _, brewErr := exec.LookPath("brew"); brewErr == nil {
+			if promptYN(reader, "  Install sigil-ml via Homebrew? [Y/n]", "y") {
+				cmd := exec.Command("brew", "install", "alecfeeman/sigil/sigil-ml")
+				cmd.Stdout = os.Stdout
+				cmd.Stderr = os.Stderr
+				if err := cmd.Run(); err != nil {
+					fmt.Printf("  [warn] brew install failed: %v\n", err)
+				} else {
+					fmt.Println("  [ok]   sigil-ml installed")
+				}
+			}
+		} else {
+			fmt.Println("         Install manually: pip install sigil-ml")
+		}
+	} else {
+		fmt.Println("  [ok]   sigil-ml found in PATH")
+	}
+	return true
+}
+
+// setupFleetEnabled prompts for fleet and returns whether it's enabled.
+func setupFleetEnabled(reader *bufio.Reader) bool {
+	fmt.Println()
+	fmt.Println("--- Team Insights (Fleet Reporting) ---")
+	return promptYN(reader, "Enable team insights (fleet reporting)? [y/N]", "n")
 }
 
 // installConfigFile creates config.toml with watch dirs, repo dirs, inference, and fleet sections.

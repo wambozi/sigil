@@ -103,6 +103,35 @@ func TestWriteInitConfig(t *testing.T) {
 	})
 }
 
+func TestWriteInitConfig_ml_and_repos(t *testing.T) {
+	t.Run("ml_enabled_with_repos", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+		p := initPayload{
+			WatchDirs:      []string{"~/code"},
+			RepoDirs:       []string{"~/code/sigil", "~/code/trader"},
+			LocalInference: true,
+			MLEnabled:      true,
+			MLMode:         "local",
+		}
+
+		err := writeInitConfig(p)
+		require.NoError(t, err)
+
+		cfgPath := filepath.Join(tmpDir, "sigil", "config.toml")
+		data, err := os.ReadFile(cfgPath)
+		require.NoError(t, err)
+
+		content := string(data)
+		assert.Contains(t, content, `"~/code/sigil"`)
+		assert.Contains(t, content, `"~/code/trader"`)
+		assert.Contains(t, content, `mode = "local"`)
+		assert.Contains(t, content, `[ml.local]`)
+		assert.Contains(t, content, `enabled = true`)
+	})
+}
+
 func TestDefaultWatchDir(t *testing.T) {
 	t.Parallel()
 

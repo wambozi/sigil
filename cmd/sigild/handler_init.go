@@ -43,9 +43,11 @@ func registerInitHandlers(srv *socket.Server) {
 	})
 }
 
-// initPayload is the config sent by the onboarding wizard.
+// initPayload is the config sent by both the onboarding wizard and sigild init.
+// Both code paths build this struct and call writeInitConfig.
 type initPayload struct {
 	WatchDirs         []string `json:"watch_dirs"`
+	RepoDirs          []string `json:"repo_dirs"`
 	InferenceMode     string   `json:"inference_mode"`
 	NotificationLevel int      `json:"notification_level"`
 	Plugins           []string `json:"plugins"`
@@ -55,6 +57,8 @@ type initPayload struct {
 	LocalInference    bool     `json:"local_inference"`
 	FleetEnabled      bool     `json:"fleet_enabled"`
 	FleetEndpoint     string   `json:"fleet_endpoint"`
+	MLEnabled         bool     `json:"ml_enabled"`
+	MLMode            string   `json:"ml_mode"`
 }
 
 // writeInitConfig creates config.toml from the wizard payload.
@@ -105,6 +109,15 @@ func writeInitConfig(p initPayload) error {
 	}
 	b.WriteString("]\n")
 
+	// Repo dirs (discovered by CLI, empty from wizard).
+	if len(p.RepoDirs) > 0 {
+		b.WriteString("repo_dirs = [\n")
+		for _, d := range p.RepoDirs {
+			fmt.Fprintf(&b, "  %q,\n", d)
+		}
+		b.WriteString("]\n")
+	}
+
 	// Notifier
 	level := p.NotificationLevel
 	if level < 0 || level > 4 {
@@ -123,8 +136,19 @@ func writeInitConfig(p initPayload) error {
 		fmt.Fprintf(&b, "api_key = %q\n", p.CloudAPIKey)
 	}
 
-	// ML (disabled by default from wizard)
-	b.WriteString("\n[ml]\nmode = \"disabled\"\n")
+	// ML
+	mlMode := p.MLMode
+	if mlMode == "" {
+		if p.MLEnabled {
+			mlMode = "local"
+		} else {
+			mlMode = "disabled"
+		}
+	}
+	fmt.Fprintf(&b, "\n[ml]\nmode = %q\n", mlMode)
+	if p.MLEnabled {
+		b.WriteString("\n[ml.local]\nenabled = true\nserver_url = \"http://127.0.0.1:7774\"\n")
+	}
 
 	// Retention
 	b.WriteString("\n[retention]\nraw_event_days = 90\n")
