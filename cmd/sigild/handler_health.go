@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os/exec"
 	"time"
 
+	"github.com/wambozi/sigil/internal/config"
 	"github.com/wambozi/sigil/internal/socket"
 )
 
@@ -26,9 +28,17 @@ type healthAction struct {
 // registerHealthHandler adds the health socket method.
 func registerHealthHandler(srv *socket.Server, cfg daemonConfig) {
 	srv.Handle("health", func(ctx context.Context, _ socket.Request) socket.Response {
+		// Load config from disk to pick up changes from set-config.
+		liveCfg, err := config.Load(cfg.configPath)
+		if err != nil {
+			liveCfg = cfg.fileCfg
+		}
+		live := cfg
+		live.fileCfg = liveCfg
+
 		services := []serviceHealth{
-			checkLLMHealth(cfg),
-			checkMLHealth(cfg),
+			checkLLMHealth(live),
+			checkMLHealth(live),
 		}
 
 		payload, _ := json.Marshal(map[string]any{
@@ -67,30 +77,59 @@ func checkLLMHealth(cfg daemonConfig) serviceHealth {
 				Message: "Running on your machine",
 			}
 		}
-		// Local is down.
+
+		// Local is down — check if binary exists.
+		serverBin := cfg.fileCfg.Inference.Local.ServerBin
+		if serverBin == "" {
+			serverBin = "llama-server"
+		}
+		_, binErr := exec.LookPath(serverBin)
+		hasBinary := binErr == nil
+
+		// Local is down but cloud fallback is active.
 		if cloudEnabled && hasCloudCreds {
 			return serviceHealth{
 				Name:    "AI Suggestions",
 				Status:  "ok",
 				Message: "Using cloud (local model is offline)",
+				Actions: []healthAction{
+					{Label: "Start Local Model", Action: "restart_daemon"},
+				},
 			}
 		}
 		if cloudEnabled && !hasCloudCreds {
+			actions := []healthAction{
+				{Label: "Sign In to Cloud", Action: "cloud_signin"},
+			}
+			if hasBinary {
+				actions = append([]healthAction{
+					{Label: "Start Local Model", Action: "restart_daemon"},
+				}, actions...)
+			}
 			return serviceHealth{
 				Name:    "AI Suggestions",
 				Status:  "down",
 				Message: "Local model is offline and cloud isn't signed in",
+				Actions: actions,
+			}
+		}
+
+		// Local only, and it's down.
+		if hasBinary {
+			return serviceHealth{
+				Name:    "AI Suggestions",
+				Status:  "down",
+				Message: "Local model is offline",
 				Actions: []healthAction{
-					{Label: "Sign In to Cloud", Action: "cloud_signin"},
-					{Label: "Turn Off AI", Action: "disable_llm"},
+					{Label: "Start Local Model", Action: "restart_daemon"},
+					{Label: "Switch to Cloud AI", Action: "enable_cloud_llm"},
 				},
 			}
 		}
-		// Local only, and it's down.
 		return serviceHealth{
 			Name:    "AI Suggestions",
 			Status:  "down",
-			Message: "Local model is offline",
+			Message: "Local AI server is not installed",
 			Actions: []healthAction{
 				{Label: "Switch to Cloud AI", Action: "enable_cloud_llm"},
 				{Label: "Turn Off AI", Action: "disable_llm"},
@@ -150,12 +189,33 @@ func checkMLHealth(cfg daemonConfig) serviceHealth {
 				Name:    "Smart Predictions",
 				Status:  "ok",
 				Message: "Using cloud (local is offline)",
+				Actions: []healthAction{
+					{Label: "Restart Predictions", Action: "restart_daemon"},
+				},
+			}
+		}
+
+		serverBin := cfg.fileCfg.ML.Local.ServerBin
+		if serverBin == "" {
+			serverBin = "sigil-ml"
+		}
+		_, binErr := exec.LookPath(serverBin)
+
+		if binErr == nil {
+			return serviceHealth{
+				Name:    "Smart Predictions",
+				Status:  "down",
+				Message: "Prediction service is offline",
+				Actions: []healthAction{
+					{Label: "Restart Predictions", Action: "restart_daemon"},
+					{Label: "Switch to Cloud", Action: "enable_cloud_ml"},
+				},
 			}
 		}
 		return serviceHealth{
 			Name:    "Smart Predictions",
 			Status:  "down",
-			Message: "Prediction service is offline",
+			Message: "Prediction service is not installed",
 			Actions: []healthAction{
 				{Label: "Switch to Cloud", Action: "enable_cloud_ml"},
 				{Label: "Turn Off", Action: "disable_ml"},

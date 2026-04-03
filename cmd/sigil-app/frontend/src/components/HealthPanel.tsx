@@ -82,6 +82,9 @@ export function HealthPanel() {
         case "disable_ml":
           await window.go.main.App.SetConfig({ ml: { mode: "disabled" } });
           break;
+        case "restart_daemon":
+          await window.go.main.App.RestartDaemon();
+          break;
       }
     } catch {
       // Action failed — refresh will show current state.
