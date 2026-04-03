@@ -58,18 +58,6 @@ func (a *App) startup(ctx context.Context) {
 	a.windowOpen = true // app starts with the window visible
 	a.log.Info("sigil-app starting", "socket", a.socketPath)
 
-	// Track window focus — suppress native notifications when window is open.
-	wailsrt.EventsOn(ctx, "window:focus", func(optionalData ...interface{}) {
-		a.mu.Lock()
-		a.windowOpen = true
-		a.mu.Unlock()
-	})
-	wailsrt.EventsOn(ctx, "window:blur", func(optionalData ...interface{}) {
-		a.mu.Lock()
-		a.windowOpen = false
-		a.mu.Unlock()
-	})
-
 	subCtx, cancel := context.WithCancel(ctx)
 	a.subCancel = cancel
 	go a.startSubscription(subCtx)
@@ -582,4 +570,20 @@ func (a *App) IsConnected() bool {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.connected
+}
+
+// NotifyWindowFocus is called by the frontend when the window gains focus.
+// Native notifications are suppressed while the window is visible.
+func (a *App) NotifyWindowFocus() {
+	a.mu.Lock()
+	a.windowOpen = true
+	a.mu.Unlock()
+}
+
+// NotifyWindowBlur is called by the frontend when the window loses focus.
+// Native notifications resume when the window is hidden.
+func (a *App) NotifyWindowBlur() {
+	a.mu.Lock()
+	a.windowOpen = false
+	a.mu.Unlock()
 }

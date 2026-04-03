@@ -22,6 +22,8 @@ declare const window: Window & {
         IsConnected(): Promise<boolean>;
         GetCurrentTask(): Promise<any>;
         CheckInit(): Promise<{ initialized: boolean; config_path: string }>;
+        NotifyWindowFocus(): Promise<void>;
+        NotifyWindowBlur(): Promise<void>;
       };
     };
   };
@@ -130,10 +132,10 @@ export function App() {
       }
     );
 
-    // Emit window focus/blur to Go backend so it can suppress native
+    // Notify Go backend of window focus/blur so it can suppress native
     // notifications when the app window is visible.
-    const onFocus = () => window.runtime.EventsEmit("window:focus");
-    const onBlur = () => window.runtime.EventsEmit("window:blur");
+    const onFocus = () => window.go.main.App.NotifyWindowFocus();
+    const onBlur = () => window.go.main.App.NotifyWindowBlur();
     globalThis.addEventListener("focus", onFocus);
     globalThis.addEventListener("blur", onBlur);
 
